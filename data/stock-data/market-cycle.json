@@ -1,0 +1,64 @@
+{
+  "_comment": "霍华德·马克斯市场周期评估 - 手动评估项 (得分: -1=低位, 0=中性, +1=高位)",
+  "_updated": "2026-04-05",
+
+  "economy_current": {
+    "score": 0,
+    "note": "PMI/GDP偏弱但有企稳迹象"
+  },
+  "economy_outlook": {
+    "score": 0,
+    "note": "政策刺激持续，但复苏缓慢"
+  },
+  "lenders": {
+    "score": 0.7,
+    "note": "急于放贷，贷款电话增多"
+  },
+  "capital_market": {
+    "score": 0.7,
+    "note": "宽松，M2持续增长"
+  },
+  "capital_supply": {
+    "score": 0.5,
+    "note": "充足，大盘成交量回升"
+  },
+  "financing_terms": {
+    "score": 0.5,
+    "note": "宽松，融资条件放松"
+  },
+  "interest_rates": {
+    "score": 0.7,
+    "note": "低利率环境，LPR多次下调"
+  },
+  "investors": {
+    "score": 0,
+    "note": "中性偏谨慎"
+  },
+  "asset_holders": {
+    "score": 0,
+    "note": "持有为主，未出现大规模抛售或追涨"
+  },
+  "funds": {
+    "score": 0.5,
+    "note": "新基金发行增加，ETF规模扩大"
+  },
+  "asset_prices": {
+    "score": 0.3,
+    "note": "估值中等偏高"
+  },
+  "style": {
+    "score": 0.5,
+    "note": "流行风格偏激进 (应保持谨慎)"
+  },
+
+  "_perspectives": {
+    "treasury_yield": "关注10年期国债收益率走势",
+    "hsi": "港股恒生指数作为资金流向参考",
+    "fx": "人民币汇率走势影响外资流入",
+    "margin_trading": "两融余额变化反映杠杆水平",
+    "buyback": "上市公司回购/中期分红/量化/转融券/新股发行节奏",
+    "national_team": "汇金持仓增持动向",
+    "a500": "A500 ETF是否为护盘特设",
+    "stamp_tax": "印花税处于历史最低水平"
+  }
+}

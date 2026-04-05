@@ -110,6 +110,28 @@
       "state": {
         "nextRunAtMs": 1775872800000
       }
+    },
+    {
+      "id": "a3f72c1e-5d89-4b6a-9c4f-8e7d2a1b3c5f",
+      "name": "market-cycle",
+      "description": "市场周期宏观分析 隔周六11:00",
+      "enabled": true,
+      "createdAtMs": 1775391200000,
+      "updatedAtMs": 1775391200000,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 11 * * 6",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/market_cycle.py --refresh --send --biweekly"
+      },
+      "state": {
+        "nextRunAtMs": 1776477600000
+      }
     }
   ]
 }

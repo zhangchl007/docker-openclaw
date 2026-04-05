@@ -17,7 +17,7 @@ import argparse
 import json
 import sys
 import traceback
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -25,6 +25,70 @@ sys.path.insert(0, str(Path(__file__).parent))
 from stock_data import get_provider, StockQuote
 from analyzers import MasterAnalyzer
 from notifier import Notifier
+
+
+class TradingCalendar:
+    """中国A股交易日历，使用新浪接口获取真实交易日（含节假日排除）"""
+
+    CACHE_PATH = Path('/home/node/.openclaw/stock-data/cache/trading_calendar.json')
+
+    @classmethod
+    def _load_cache(cls) -> set:
+        if cls.CACHE_PATH.exists():
+            try:
+                with open(cls.CACHE_PATH) as f:
+                    data = json.load(f)
+                # Check if cache covers current year
+                if str(datetime.now().year) in data.get('years', []):
+                    return set(data.get('dates', []))
+            except:
+                pass
+        return set()
+
+    @classmethod
+    def _save_cache(cls, dates: set):
+        cls.CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        years = sorted(set(d[:4] for d in dates))
+        with open(cls.CACHE_PATH, 'w') as f:
+            json.dump({'years': years, 'dates': sorted(dates), 'updated': datetime.now().isoformat()}, f)
+
+    @classmethod
+    def _fetch_from_sina(cls) -> set:
+        """从新浪获取交易日历"""
+        try:
+            import akshare as ak
+            df = ak.tool_trade_date_hist_sina()
+            dates = set(df['trade_date'].astype(str).tolist())
+            cls._save_cache(dates)
+            return dates
+        except Exception as e:
+            print(f"[Calendar] Failed to fetch: {e}")
+            return set()
+
+    @classmethod
+    def get_trading_dates(cls) -> set:
+        """获取所有交易日（带缓存）"""
+        dates = cls._load_cache()
+        if not dates:
+            dates = cls._fetch_from_sina()
+        return dates
+
+    @classmethod
+    def is_trading_day(cls, d: date = None) -> bool:
+        """判断是否为交易日（考虑节假日）"""
+        if d is None:
+            d = date.today()
+
+        # Weekend shortcut
+        if d.weekday() >= 5:
+            return False
+
+        dates = cls.get_trading_dates()
+        if dates:
+            return str(d) in dates
+        else:
+            # Fallback: weekday only (if API fails)
+            return d.weekday() < 5
 
 
 class StockReportRunner:
@@ -60,7 +124,8 @@ class StockReportRunner:
         return codes
 
     def is_trading_day(self) -> bool:
-        return datetime.now().weekday() < 5
+        """判断今天是否为A股交易日（排除周末+法定节假日）"""
+        return TradingCalendar.is_trading_day()
 
     def is_trading_hours(self) -> bool:
         t = datetime.now().hour * 100 + datetime.now().minute

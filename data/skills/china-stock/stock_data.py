@@ -249,8 +249,20 @@ class BaostockAPI:
     
     @staticmethod
     def _code(code: str) -> str:
+        """Format code for Baostock.
+        Index rules: 000xxx→sh (上证指数), 399xxx→sz (深证指数)
+        Stock rules: 6xxxxx→sh (沪市), 0/3xxxxx→sz (深市)
+        """
         code = str(code).zfill(6)
-        return f"sh.{code}" if code.startswith('6') else f"sz.{code}"
+        # Indices
+        if code.startswith('000') and len(code) == 6 and code <= '000999':
+            return f"sh.{code}"  # 上证指数 (000001=上证综指, 000300=沪深300)
+        if code.startswith('399'):
+            return f"sz.{code}"  # 深证指数 (399001=深成指, 399006=创业板指)
+        # Stocks
+        if code.startswith('6'):
+            return f"sh.{code}"
+        return f"sz.{code}"
     
     @classmethod
     def get_history(cls, code: str, days: int = 120) -> pd.DataFrame:
