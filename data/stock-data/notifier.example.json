@@ -1,0 +1,20 @@
+{
+  "_comment": "通知渠道配置 - 请填入您的密钥后重命名为 notifier.json",
+  "wecom": {
+    "webhook": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY_HERE",
+    "_doc": "企业微信机器人Webhook地址，在企业微信群中添加机器人获取"
+  },
+  "serverchan": {
+    "sendkey": "YOUR_SENDKEY_HERE",
+    "_doc": "Server酱SendKey，从 https://sct.ftqq.com/ 注册获取，可推送到微信"
+  },
+  "pushplus": {
+    "token": "YOUR_TOKEN_HERE",
+    "_doc": "PushPlus Token，从 https://www.pushplus.plus/ 获取，支持微信推送"
+  },
+  "telegram": {
+    "bot_token": "YOUR_BOT_TOKEN_HERE",
+    "chat_id": "YOUR_CHAT_ID_HERE",
+    "_doc": "Telegram配置，通过 @BotFather 创建Bot获取Token"
+  }
+}

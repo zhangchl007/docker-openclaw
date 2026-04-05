@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "name": "china-stock-watchlist",
+  "description": "我的中国股票自选列表",
+  "updated": "2026-04-05",
+  "groups": {
+    "白酒": [
+      {"code": "600519", "name": "贵州茅台", "market": "SH"},
+      {"code": "000858", "name": "五粮液", "market": "SZ"},
+      {"code": "000568", "name": "泸州老窖", "market": "SZ"}
+    ],
+    "新能源": [
+      {"code": "300750", "name": "宁德时代", "market": "SZ"},
+      {"code": "002594", "name": "比亚迪", "market": "SZ"},
+      {"code": "600438", "name": "通威股份", "market": "SH"}
+    ],
+    "科技": [
+      {"code": "002415", "name": "海康威视", "market": "SZ"},
+      {"code": "300059", "name": "东方财富", "market": "SZ"},
+      {"code": "002230", "name": "科大讯飞", "market": "SZ"}
+    ],
+    "金融": [
+      {"code": "601318", "name": "中国平安", "market": "SH"},
+      {"code": "600036", "name": "招商银行", "market": "SH"},
+      {"code": "601166", "name": "兴业银行", "market": "SH"}
+    ],
+    "医药": [
+      {"code": "300347", "name": "泰格医药", "market": "SZ"},
+      {"code": "300759", "name": "康龙化成", "market": "SZ"},
+      {"code": "300633", "name": "开立医疗", "market": "SZ"},
+      {"code": "688366", "name": "昊海生科", "market": "SH"}
+    ]
+  },
+  "indices": [
+    {"code": "000001", "name": "上证指数", "market": "SH"},
+    {"code": "399001", "name": "深证成指", "market": "SZ"},
+    {"code": "399006", "name": "创业板指", "market": "SZ"}
+  ],
+  "alerts": {
+    "600519": {
+      "name": "贵州茅台",
+      "priceAbove": 1900,
+      "priceBelow": 1600,
+      "changePercent": 5
+    },
+    "300750": {
+      "name": "宁德时代",
+      "priceAbove": 250,
+      "priceBelow": 150,
+      "changePercent": 7
+    }
+  }
+}

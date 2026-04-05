@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "d98da3ca-6a82-47f8-a347-a6e65ae947e8",
+      "name": "stock-morning",
+      "description": "早盘简报 9:00 AM",
+      "enabled": true,
+      "createdAtMs": 1775364856479,
+      "updatedAtMs": 1775364856479,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 9 * * 1-5",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py morning"
+      },
+      "state": {
+        "nextRunAtMs": 1775437200000
+      }
+    },
+    {
+      "id": "eb83f21b-787e-42d9-ae0a-2f96bd334ed5",
+      "name": "stock-midday",
+      "description": "午盘快报 11:35 AM",
+      "enabled": true,
+      "createdAtMs": 1775364886080,
+      "updatedAtMs": 1775364886080,
+      "schedule": {
+        "kind": "cron",
+        "expr": "35 11 * * 1-5",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py midday"
+      },
+      "state": {
+        "nextRunAtMs": 1775446500000
+      }
+    },
+    {
+      "id": "2c4cb736-064a-4b59-9662-04041d5609dc",
+      "name": "stock-close",
+      "description": "收盘总结 15:05 PM",
+      "enabled": true,
+      "createdAtMs": 1775364894961,
+      "updatedAtMs": 1775364894961,
+      "schedule": {
+        "kind": "cron",
+        "expr": "5 15 * * 1-5",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py close"
+      },
+      "state": {
+        "nextRunAtMs": 1775459100000
+      }
+    },
+    {
+      "id": "c12a9bfa-fa18-4584-8e1e-3bd6e9fefe39",
+      "name": "stock-alert",
+      "description": "价格预警检查",
+      "enabled": true,
+      "createdAtMs": 1775364912139,
+      "updatedAtMs": 1775364912139,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/30 9-15 * * 1-5",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py alert"
+      },
+      "state": {
+        "nextRunAtMs": 1775437200000
+      }
+    },
+    {
+      "id": "4794495e-7079-4de9-9ae0-7f5a1a1dc40d",
+      "name": "stock-weekly",
+      "description": "股票周报 周六10:00",
+      "enabled": true,
+      "createdAtMs": 1775364922354,
+      "updatedAtMs": 1775364922354,
+      "schedule": {
+        "kind": "cron",
+        "expr": "0 10 * * 6",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py weekly"
+      },
+      "state": {
+        "nextRunAtMs": 1775872800000
+      }
+    }
+  ]
+}

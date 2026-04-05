@@ -1,0 +1,99 @@
+{
+  "name": "china-stock",
+  "version": "2.0.0",
+  "description": "China Stock Analysis System - Combining Three Investment Masters (O'Neil, Duan Yongping, Lynch)",
+  "author": "zhangchl007",
+  "triggers": [
+    "stock",
+    "股票",
+    "行情",
+    "自选股",
+    "watchlist",
+    "canslim",
+    "value",
+    "growth"
+  ],
+  "tools": [
+    {
+      "name": "fetch_stock_data",
+      "description": "Fetch real-time stock quotes",
+      "parameters": {
+        "codes": {
+          "type": "array",
+          "description": "Stock codes, e.g., ['600519', '000858']"
+        }
+      }
+    },
+    {
+      "name": "canslim_analysis",
+      "description": "CANSLIM analysis (William O'Neil methodology)",
+      "parameters": {
+        "code": {
+          "type": "string",
+          "description": "Stock code"
+        }
+      }
+    },
+    {
+      "name": "value_analysis",
+      "description": "Value investing analysis (Duan Yongping / Buffett methodology)",
+      "parameters": {
+        "code": {
+          "type": "string",
+          "description": "Stock code"
+        }
+      }
+    },
+    {
+      "name": "growth_analysis",
+      "description": "Growth analysis (Peter Lynch methodology)",
+      "parameters": {
+        "code": {
+          "type": "string",
+          "description": "Stock code"
+        }
+      }
+    },
+    {
+      "name": "master_analysis",
+      "description": "Combined analysis from all three investment masters",
+      "parameters": {
+        "code": {
+          "type": "string",
+          "description": "Stock code"
+        }
+      }
+    },
+    {
+      "name": "weekly_report",
+      "description": "Generate weekly sector/portfolio report",
+      "parameters": {
+        "sector": {
+          "type": "string",
+          "description": "Sector name (e.g., 医药, 白酒)"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["full", "compact"],
+          "description": "Report format"
+        }
+      }
+    },
+    {
+      "name": "send_stock_report",
+      "description": "Send stock report via WeChat",
+      "parameters": {
+        "reportType": {
+          "type": "string",
+          "description": "Report type"
+        }
+      }
+    }
+  ],
+  "config": {
+    "dataSource": "sina+baostock",
+    "watchlistPath": "/home/node/.openclaw/stock-data/watchlist.json",
+    "cachePath": "/home/node/.openclaw/stock-data/cache",
+    "reportPath": "/home/node/.openclaw/stock-data/reports"
+  }
+}

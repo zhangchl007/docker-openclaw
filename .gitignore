@@ -14,6 +14,9 @@ data/update-check.json
 # Device identity (contains PRIVATE KEYS)
 data/identity/
 
+# Workspace (managed by OpenClaw, may contain nested .git)
+data/workspace/
+
 # Device pairing (contains tokens)
 data/devices/
 
@@ -22,6 +25,11 @@ data/logs/
 
 # Task database
 data/tasks/
+
+# Stock data - notification config (contains API keys)
+data/stock-data/notifier.json
+data/stock-data/cache/
+data/stock-data/reports/
 
 # Catch-all for any new sensitive files in data/
 data/*.json
@@ -35,6 +43,15 @@ data/*.db
 # Keep canvas for custom UI (no secrets)
 !data/canvas/
 !data/canvas/.gitkeep
+
+# Keep stock skill code (no secrets)
+!data/skills/
+!data/skills/**
+
+# Keep watchlist (user data, no secrets)
+!data/stock-data/
+!data/stock-data/watchlist.json
+!data/stock-data/notifier.example.json
 
 # ===================
 # GENERAL IGNORES
