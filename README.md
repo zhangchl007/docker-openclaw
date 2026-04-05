@@ -1,120 +1,305 @@
-# OpenClaw Docker — China Stock Analysis Platform# OpenClaw Docker Deployment
+# OpenClaw Docker — China Stock Analysis# OpenClaw Docker — China Stock Analysis
 
-Docker-based deployment for [OpenClaw](https://openclaw.io) AI Gateway with an integrated **China A-Share & HK Stock Analysis System**, featuring automated reports, multi-master scoring, macro cycle assessment, and WeChat notifications.Docker-based deployment for OpenClaw AI Gateway with **China Stock Analysis**.
 
-## ✨ Features## ✨ Features
-| Feature | Description |- 🦞 OpenClaw AI Gateway
-|---------|-------------|- 📊 China A-Share Stock Analysis (16 stocks in watchlist)
-| 🦞 **OpenClaw Gateway** | AI agent gateway with conversation management |- 📱 WeChat Notifications (WeCom Bot / Server酱 / PushPlus)
-| 📊 **Deep-Dive Stock Analysis** | Technical + fundamental analysis for A-shares and HK stocks |- ⏰ Automated Daily Reports
 
-| 🏆 **Three-Master Scoring** | CANSLIM (O'Neil) + Value (Buffett/Duan Yongping) + Growth (Peter Lynch) |- 🔔 Real-time Price Alerts
+OpenClaw AI Gateway + automated A-Share & HK stock analysis with WeChat notifications.[OpenClaw](https://openclaw.io) AI Gateway + automated China A-Share & HK stock analysis with WeChat notifications.Docker-based deployment for [OpenClaw](https://openclaw.io) AI Gateway with an integrated **China A-Share & HK Stock Analysis System**, featuring automated reports, multi-master scoring, macro cycle assessment, and WeChat notifications.Docker-based deployment for OpenClaw AI Gateway with **China Stock Analysis**.
 
-| 🔄 **Market Cycle Assessment** | Howard Marks 14-dimension framework with real macro data |
 
-| 📈 **Multi-Year Financials** | 10-year A-share / 9-year HK stock financial history |## 📅 Automated Schedule
 
-| 📱 **WeChat Notifications** | Auto-send reports via WeCom webhook |
+**Features:** Deep-dive analysis (RSI/MACD/PE/PB/ROE/PEG) · Three-master scoring (O'Neil/Buffett/Lynch) · Howard Marks market cycle · 10yr financials · Price alerts · Auto holiday skip## Features## ✨ Features
 
-| ⏰ **Smart Scheduling** | Cron with China trading calendar (holidays excluded) || Time | Report | Description |
 
-| 🔔 **Price Alerts** | Real-time price breakout/breakdown alerts ||------|--------|-------------|
 
-| 09:00 | 🌅 早盘简报 | Morning brief with market overview |
+**Watchlist:** 18 stocks / 6 sectors (白酒·新能源·科技·金融·医药·港股) — edit `data/stock-data/watchlist.json`| Feature | Description |
 
-## 📅 Automated Schedule| 11:35 | 🕛 午盘快报 | Midday update with top gainers/losers |
+|---------|-------------|
 
-| 15:05 | 📊 收盘总结 | Close summary with full analysis |
+## Schedule| 🦞 OpenClaw AI Gateway | AI agent gateway with conversation management |
 
-| Time | Job | Description || */30 min | ⚠️ 价格预警 | Price alert check during trading hours |
+| Time | Job || 📊 **Deep-dive stock analysis** | Technical (RSI/MACD/Bollinger) + Fundamental (PE/PB/ROE/PEG) |
 
-|------|-----|-------------|| Sat 10:00 | 📈 股票周报 | Weekly performance report |
+|------|-----|| 📊 China A-Share Stock Analysis | (16 stocks in watchlist)
 
-| Mon-Fri 09:00 | 🌅 Morning Brief | Watchlist overview + price alerts setup |
+| Mon-Fri 09:00 | Morning brief |
 
-| Mon-Fri 11:35 | 🕛 Midday Update | Top gainers/losers at midday break |## 🚀 Quick Start
+| Mon-Fri 11:35 | Midday update |- 🏆 **Three-master scoring** — CANSLIM (O'Neil) + Value (Buffett/Duan Yongping) + Growth (Peter Lynch)| 🦞 **OpenClaw Gateway** | AI agent gateway with conversation management |- 📱 WeChat Notifications (WeCom Bot / Server酱 / PushPlus)
 
-| Mon-Fri 15:05 | 📊 Close Summary | Full deep-dive analysis with technicals |
+| Mon-Fri 15:05 | Close summary (deep-dive) |
 
-| Mon-Fri */30min | ⚠️ Price Alert | Breakout/breakdown checks during trading hours |```bash
+| Mon-Fri */30min | Price alerts |- 🔄 **Market cycle assessment** — Howard Marks 14-dimension framework with real macro data (GDP/PMI/M2/Bonds/FX)| 📊 **Deep-Dive Stock Analysis** | Technical + fundamental analysis for A-shares and HK stocks |- ⏰ Automated Daily Reports
 
-| Saturday 10:00 | 📈 Weekly Report | All-stock deep-dive with 3-master scoring |# Clone the repository
+| Sat 10:00 | Weekly report |
 
-| Biweekly Sat 11:00 | 🔄 Market Cycle | Howard Marks macro cycle assessment |git clone https://github.com/zhangchl007/docker-openclaw.git
+| Biweekly Sat 11:00 | Market cycle analysis |- 📈 **Multi-year financials** — 10-year A-share / 9-year HK history
 
-cd docker-openclaw
 
-> **Note:** All daily jobs automatically skip weekends and China public holidays (Spring Festival, National Day, Qingming, etc.) using the Sina trading calendar API.
 
-# Enable pre-commit security hook
+All daily jobs skip weekends + China public holidays via Sina trading calendar.- 📱 **WeChat notifications** — Auto-send via WeCom webhook (auto-splits long messages)| 🏆 **Three-Master Scoring** | CANSLIM (O'Neil) + Value (Buffett/Duan Yongping) + Growth (Peter Lynch) |- 🔔 Real-time Price Alerts
 
-## 📂 Project Structuregit config core.hooksPath .githooks
 
-```# Start the gateway
 
-docker-openclaw/docker compose up -d
-
-├── docker-compose.yml              # Container orchestration
-
-├── openclaw.example.json           # Example gateway config# Install Python dependencies
-
-├── .gitignore                      # Security: protects sensitive filesdocker exec -u root openclaw apt-get update && docker exec -u root openclaw apt-get install -y python3-pip
-
-├── .githooks/pre-commit            # Secret scanning hookdocker exec openclaw pip3 install akshare pandas numpy --break-system-packages
-
-├── .github/```
-
-│   ├── copilot-instructions.md     # GitHub Copilot context
-
-│   └── INVESTMENT_PHILOSOPHY.md    # Three-master methodology docs## 🌐 Access Dashboard
-
-│
-
-└── data/                           # Mounted as /home/node/.openclawOpen in browser: http://localhost:18789/
-
-    ├── openclaw.json               # Gateway config (sensitive!)
-
-    ├── cron/jobs.json              # 6 scheduled jobs## 📊 Stock Analysis Setup
-
-    ├── stock-data/
-
-    │   ├── watchlist.json          # 18 stocks across 6 sectors + alerts### Step 1: Configure Watchlist
-
-    │   ├── notifier.json           # WeChat notification config
-
-    │   ├── market-cycle.json       # Howard Marks manual overridesEdit `data/stock-data/watchlist.json` to add your stocks:
-
-    │   └── cache/                  # Auto-managed data cache
-
-    │```json
-
-    └── skills/china-stock/         # Stock analysis skill (6 Python files){
-
-        ├── stock_data.py           # Data layer (Sina/Tencent/Baostock/AKShare)  "groups": {
-
-        ├── analyzers.py            # 3-master scoring (pure computation)    "我的自选": [
-
-        ├── report.py               # Deep-dive report generator      {"code": "600519", "name": "贵州茅台", "market": "SH"}
-
-        ├── market_cycle.py         # Howard Marks macro cycle analyzer    ]
-
-        ├── runner.py               # Cron entry point + trading calendar  }
-
-        ├── notifier.py             # Multi-channel notification sender}
-
-        └── skill.json              # Skill manifest```
-
-```
-
-### Step 2: Configure WeChat Notifications
-
-## 🗂️ Watchlist (18 Stocks, 6 Sectors)
+## Quick Start- ⏰ **Smart scheduling** — Skips weekends + China public holidays automatically
 
 ```bash
 
-| Sector | Stocks |# Copy example config
+git clone https://github.com/zhangchl007/docker-openclaw.git && cd docker-openclaw- 🔔 **Price alerts** — Breakout/breakdown monitoring during trading hours| 🔄 **Market Cycle Assessment** | Howard Marks 14-dimension framework with real macro data |
 
-|--------|--------|cp data/stock-data/notifier.example.json data/stock-data/notifier.json
+git config core.hooksPath .githooks
+
+docker compose up -d
+
+docker exec -u root openclaw apt-get update && docker exec -u root openclaw apt-get install -y python3-pip
+
+docker exec openclaw pip3 install akshare baostock pandas numpy requests --break-system-packages## Watchlist| 📈 **Multi-Year Financials** | 10-year A-share / 9-year HK stock financial history |## 📅 Automated Schedule
+
+cp data/stock-data/notifier.example.json data/stock-data/notifier.json  # add your WeCom webhook
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 runner.py test
+
+```
+
+Dashboard: http://localhost:18789/18 stocks across 6 sectors: 白酒 · 新能源 · 科技 · 金融 · 医药 · 港股 (including 腾讯控股 HK:00700)| 📱 **WeChat Notifications** | Auto-send reports via WeCom webhook |
+
+
+
+## Usage
+
+```bash
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 report.py --sector 医药   # deep-diveEdit `data/stock-data/watchlist.json` to customize.| ⏰ **Smart Scheduling** | Cron with China trading calendar (holidays excluded) || Time | Report | Description |
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_cycle.py --send    # macro cycle → WeChat
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 runner.py weekly          # weekly report → WeChat
+
+```
+
+## Schedule| 🔔 **Price Alerts** | Real-time price breakout/breakdown alerts ||------|--------|-------------|
+
+## Data Sources
+
+| Data | A-Shares | HK | API |
+
+|------|----------|-----|-----|
+
+| Quotes (PE/PB) | ✅ | ✅ | Tencent/Sina || Time | Job || 09:00 | 🌅 早盘简报 | Morning brief with market overview |
+
+| K-lines | ✅ | ✅ | Baostock/AKShare |
+
+| Financials | ✅ 10yr | ✅ 9yr | AKShare ||------|-----|
+
+| Macro | ✅ | — | AKShare |
+
+| Mon-Fri 09:00 | 🌅 Morning brief |## 📅 Automated Schedule| 11:35 | 🕛 午盘快报 | Midday update with top gainers/losers |
+
+All cached locally. Repeat runs < 1 second.
+
+| Mon-Fri 11:35 | 🕛 Midday update |
+
+## Structure
+
+```| Mon-Fri 15:05 | 📊 Close summary (deep-dive) || 15:05 | 📊 收盘总结 | Close summary with full analysis |
+
+data/stock-data/watchlist.json       # your stocks
+
+data/stock-data/notifier.json        # WeChat config| Mon-Fri */30min | ⚠️ Price alerts |
+
+data/skills/china-stock/
+
+  stock_data.py   # data layer (Sina/Tencent/Baostock/AKShare + cache)| Saturday 10:00 | 📈 Weekly report || Time | Job | Description || */30 min | ⚠️ 价格预警 | Price alert check during trading hours |
+
+  analyzers.py    # CANSLIM + Value + Growth scoring
+
+  report.py       # deep-dive report generator| Biweekly Sat 11:00 | 🔄 Market cycle analysis |
+
+  market_cycle.py # Howard Marks 14-dim macro analysis
+
+  runner.py       # cron entry + trading calendar|------|-----|-------------|| Sat 10:00 | 📈 股票周报 | Weekly performance report |
+
+  notifier.py     # WeChat sender (auto-split long msgs)
+
+```## Quick Start
+
+
+
+## Security| Mon-Fri 09:00 | 🌅 Morning Brief | Watchlist overview + price alerts setup |
+
+Gateway on `127.0.0.1` only · `no-new-privileges` · `.gitignore` + pre-commit hook protects secrets
+
+```bash
+
+## Logs
+
+```bashgit clone https://github.com/zhangchl007/docker-openclaw.git| Mon-Fri 11:35 | 🕛 Midday Update | Top gainers/losers at midday break |## 🚀 Quick Start
+
+docker compose logs -f                                                          # gateway
+
+cat data/stock-data/logs/stock-$(date +%Y%m%d).log                              # analysiscd docker-openclaw
+
+```
+
+git config core.hooksPath .githooks| Mon-Fri 15:05 | 📊 Close Summary | Full deep-dive analysis with technicals |
+
+docker compose up -d
+
+| Mon-Fri */30min | ⚠️ Price Alert | Breakout/breakdown checks during trading hours |```bash
+
+# Install dependencies
+
+docker exec -u root openclaw apt-get update && docker exec -u root openclaw apt-get install -y python3-pip| Saturday 10:00 | 📈 Weekly Report | All-stock deep-dive with 3-master scoring |# Clone the repository
+
+docker exec openclaw pip3 install akshare baostock pandas numpy requests --break-system-packages
+
+| Biweekly Sat 11:00 | 🔄 Market Cycle | Howard Marks macro cycle assessment |git clone https://github.com/zhangchl007/docker-openclaw.git
+
+# Configure WeChat (paste your WeCom webhook URL)
+
+cp data/stock-data/notifier.example.json data/stock-data/notifier.jsoncd docker-openclaw
+
+# Edit data/stock-data/notifier.json
+
+> **Note:** All daily jobs automatically skip weekends and China public holidays (Spring Festival, National Day, Qingming, etc.) using the Sina trading calendar API.
+
+# Test
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 runner.py test# Enable pre-commit security hook
+
+```
+
+## 📂 Project Structuregit config core.hooksPath .githooks
+
+Dashboard: http://localhost:18789/
+
+```# Start the gateway
+
+## Usage
+
+docker-openclaw/docker compose up -d
+
+```bash
+
+# Deep-dive report (all stocks or specific sector)├── docker-compose.yml              # Container orchestration
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 report.py
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 report.py --sector 医药├── openclaw.example.json           # Example gateway config# Install Python dependencies
+
+
+
+# Market cycle analysis (Howard Marks framework)├── .gitignore                      # Security: protects sensitive filesdocker exec -u root openclaw apt-get update && docker exec -u root openclaw apt-get install -y python3-pip
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_cycle.py
+
+├── .githooks/pre-commit            # Secret scanning hookdocker exec openclaw pip3 install akshare pandas numpy --break-system-packages
+
+# Send any report to WeChat
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_cycle.py --refresh --send├── .github/```
+
+
+
+# View financial history│   ├── copilot-instructions.md     # GitHub Copilot context
+
+docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 -c "
+
+from stock_data import get_provider│   └── INVESTMENT_PHILOSOPHY.md    # Three-master methodology docs## 🌐 Access Dashboard
+
+p = get_provider()
+
+for f in p.get_financial_history('600519'):│
+
+    print(f'{f[\"year\"]} ROE:{f[\"roe\"]:.1f}% GM:{f[\"gross_margin\"]:.1f}%')
+
+p.cleanup()└── data/                           # Mounted as /home/node/.openclawOpen in browser: http://localhost:18789/
+
+"
+
+```    ├── openclaw.json               # Gateway config (sensitive!)
+
+
+
+## Data Sources    ├── cron/jobs.json              # 6 scheduled jobs## 📊 Stock Analysis Setup
+
+
+
+| Data | A-Shares | HK Stocks | API |    ├── stock-data/
+
+|------|----------|-----------|-----|
+
+| Quotes (PE/PB) | ✅ | ✅ | Tencent / Sina |    │   ├── watchlist.json          # 18 stocks across 6 sectors + alerts### Step 1: Configure Watchlist
+
+| Daily K-lines | ✅ | ✅ | Baostock / AKShare |
+
+| Financials (10yr/9yr) | ✅ | ✅ | AKShare (同花顺/东方财富) |    │   ├── notifier.json           # WeChat notification config
+
+| Macro (GDP/PMI/M2/Bonds) | ✅ | — | AKShare |
+
+| Trading calendar | ✅ | — | Sina |    │   ├── market-cycle.json       # Howard Marks manual overridesEdit `data/stock-data/watchlist.json` to add your stocks:
+
+
+
+All data cached locally. Second runs < 1 second.    │   └── cache/                  # Auto-managed data cache
+
+
+
+## Project Structure    │```json
+
+
+
+```    └── skills/china-stock/         # Stock analysis skill (6 Python files){
+
+data/
+
+├── stock-data/        ├── stock_data.py           # Data layer (Sina/Tencent/Baostock/AKShare)  "groups": {
+
+│   ├── watchlist.json        # Your stocks
+
+│   ├── notifier.json         # WeChat config        ├── analyzers.py            # 3-master scoring (pure computation)    "我的自选": [
+
+│   └── market-cycle.json     # Macro cycle overrides
+
+└── skills/china-stock/        ├── report.py               # Deep-dive report generator      {"code": "600519", "name": "贵州茅台", "market": "SH"}
+
+    ├── stock_data.py          # Data layer (all API calls + caching)
+
+    ├── analyzers.py           # CANSLIM + Value + Growth scoring        ├── market_cycle.py         # Howard Marks macro cycle analyzer    ]
+
+    ├── report.py              # Deep-dive report generator
+
+    ├── market_cycle.py        # Howard Marks 14-dim macro analysis        ├── runner.py               # Cron entry point + trading calendar  }
+
+    ├── runner.py              # Cron entry + trading calendar
+
+    └── notifier.py            # WeChat sender (auto-split)        ├── notifier.py             # Multi-channel notification sender}
+
+```
+
+        └── skill.json              # Skill manifest```
+
+## Security
+
+```
+
+- Gateway binds to `127.0.0.1` only
+
+- Container runs with `no-new-privileges`, dropped `NET_RAW`/`NET_ADMIN`### Step 2: Configure WeChat Notifications
+
+- `.gitignore` + pre-commit hook protects secrets (`data/openclaw.json`, `data/identity/`, `data/stock-data/notifier.json`)
+
+## 🗂️ Watchlist (18 Stocks, 6 Sectors)
+
+## Logs
+
+```bash
+
+```bash
+
+docker compose logs -f                           # Gateway| Sector | Stocks |# Copy example config
+
+cat data/stock-data/logs/stock-$(date +%Y%m%d).log  # Analysis
+
+```|--------|--------|cp data/stock-data/notifier.example.json data/stock-data/notifier.json
+
 
 | 白酒 | 贵州茅台, 五粮液, 泸州老窖 |
 
