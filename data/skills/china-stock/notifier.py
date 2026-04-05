@@ -89,9 +89,33 @@ class Notifier:
         
         return '\n'.join(result)
     
+    def _split_message(self, message: str, max_bytes: int = 3800) -> list:
+        """
+        Split a long message into multiple parts at section boundaries.
+        Each part stays under max_bytes (UTF-8).
+        """
+        sections = re.split(r'\n(?=### |\n## |\n---)', message)
+        
+        parts = []
+        current = ""
+        
+        for section in sections:
+            test = current + section
+            if len(test.encode('utf-8')) > max_bytes and current:
+                parts.append(current.rstrip())
+                current = section
+            else:
+                current = test
+        
+        if current.strip():
+            parts.append(current.rstrip())
+        
+        return parts if parts else [message[:max_bytes]]
+    
     def send_wecom(self, message: str, msg_type: str = 'markdown') -> dict:
         """
         发送企业微信机器人消息
+        自动将长消息拆分为多条发送
         
         配置示例:
         {
@@ -110,30 +134,46 @@ class Notifier:
         # 格式化消息
         formatted_message = self._format_for_wecom(message)
         
-        # 企业微信Markdown消息长度限制4096字节
-        if len(formatted_message.encode('utf-8')) > 4000:
-            # 截断并添加提示
-            formatted_message = formatted_message[:1500] + "\n\n...(内容过长已截断)"
+        # 拆分长消息 (企业微信Markdown限制4096字节)
+        parts = self._split_message(formatted_message, max_bytes=3800)
         
-        if msg_type == 'markdown':
-            data = {
-                'msgtype': 'markdown',
-                'markdown': {
-                    'content': formatted_message
+        results = []
+        for i, part in enumerate(parts):
+            if len(parts) > 1:
+                part = f"📄 ({i+1}/{len(parts)})\n\n{part}"
+            
+            if msg_type == 'markdown':
+                data = {
+                    'msgtype': 'markdown',
+                    'markdown': {
+                        'content': part
+                    }
                 }
-            }
-        else:
-            data = {
-                'msgtype': 'text',
-                'text': {
-                    'content': message
+            else:
+                data = {
+                    'msgtype': 'text',
+                    'text': {
+                        'content': part
+                    }
                 }
-            }
+            
+            result = self._http_post(webhook, data)
+            results.append(result)
+            
+            # Rate limit between messages
+            if i < len(parts) - 1:
+                import time
+                time.sleep(1)
         
-        result = self._http_post(webhook, data)
-        result['channel'] = 'wecom'
-        result['success'] = result.get('errcode', -1) == 0
-        return result
+        # Summarize results
+        all_ok = all(r.get('errcode', -1) == 0 for r in results)
+        return {
+            'channel': 'wecom',
+            'success': all_ok,
+            'parts_sent': len(results),
+            'errcode': 0 if all_ok else results[-1].get('errcode', -1),
+            'errmsg': 'ok' if all_ok else results[-1].get('errmsg', 'error')
+        }
     
     def send_wecom_app(self, message: str, msg_type: str = 'markdown') -> dict:
         """
@@ -437,14 +477,13 @@ def main():
     if args.report:
         # 导入分析器生成报告
         try:
-            from analyzer import StockAnalyzer
-            analyzer = StockAnalyzer()
+            from report import DeepDiveReport
+            rpt = DeepDiveReport()
+            message = rpt.generate()
             
             if args.report == 'daily':
-                message = analyzer.generate_daily_report()
                 title = f"📊 股票日报 - {datetime.now().strftime('%Y-%m-%d')}"
             else:
-                message = analyzer.generate_weekly_report()
                 title = f"📊 股票周报 - {datetime.now().strftime('%Y年第%W周')}"
             
             if args.channel == 'all':
@@ -452,14 +491,18 @@ def main():
             elif args.channel:
                 result = notifier.send(args.channel, message, title)
             else:
-                # 默认发送到所有渠道
                 result = notifier.send_all(message, title)
             
             print(json.dumps(result, ensure_ascii=False, indent=2))
             
         except ImportError as e:
-            print(f"无法导入分析器: {e}", file=sys.stderr)
+            print(f"无法导入报告模块: {e}", file=sys.stderr)
             sys.exit(1)
+        finally:
+            try:
+                rpt.provider.cleanup()
+            except:
+                pass
         return
     
     if args.message:
