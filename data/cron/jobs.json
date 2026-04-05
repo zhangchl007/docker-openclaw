@@ -132,6 +132,28 @@
       "state": {
         "nextRunAtMs": 1776477600000
       }
+    },
+    {
+      "id": "b5e83d2f-6a91-4c7b-8d5e-9f1a3b4c6d7e",
+      "name": "trading-signal",
+      "description": "交易信号扫描 9:15 AM (开盘后15分钟)",
+      "enabled": true,
+      "createdAtMs": 1775391200000,
+      "updatedAtMs": 1775391200000,
+      "schedule": {
+        "kind": "cron",
+        "expr": "15 9 * * 1-5",
+        "tz": "Asia/Shanghai"
+      },
+      "sessionTarget": "main",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "systemEvent",
+        "text": "exec:python3 /home/node/.openclaw/skills/china-stock/trading.py --send"
+      },
+      "state": {
+        "nextRunAtMs": 1775438100000
+      }
     }
   ]
 }
