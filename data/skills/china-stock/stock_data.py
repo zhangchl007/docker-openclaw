@@ -52,7 +52,7 @@ class StockQuote:
 
 @dataclass
 class StockFinancials:
-    """财务数据"""
+    """财务数据 (最新一期)"""
     code: str
     roe: float = 0.0
     gross_margin: float = 0.0
@@ -62,6 +62,23 @@ class StockFinancials:
     debt_ratio: float = 0.0
     current_ratio: float = 0.0
     timestamp: str = ""
+
+
+@dataclass
+class YearlyFinancials:
+    """单年度财务数据"""
+    year: str
+    roe: float = 0.0
+    gross_margin: float = 0.0
+    net_margin: float = 0.0
+    revenue_growth: float = 0.0
+    profit_growth: float = 0.0
+    revenue: float = 0.0       # 亿元
+    net_profit: float = 0.0    # 亿元
+    eps: float = 0.0
+    roic: float = 0.0
+    debt_ratio: float = 0.0
+    current_ratio: float = 0.0
 
 
 class SimpleCache:
@@ -104,18 +121,22 @@ class SimpleCache:
 
 
 class SinaAPI:
-    """新浪财经实时行情 - 最快，但没有PE/PB"""
+    """新浪财经实时行情 - 支持A股+港股"""
+    
+    @staticmethod
+    def _format_code(code: str) -> str:
+        """格式化代码: 600519->sh600519, hk00700->hk00700"""
+        if code.startswith('hk'):
+            return code  # 港股直接用
+        c = str(code).zfill(6)
+        return f"sh{c}" if c.startswith('6') else f"sz{c}"
     
     @staticmethod
     def get_quotes(codes: List[str]) -> Dict[str, StockQuote]:
         if not codes:
             return {}
         
-        sina_codes = []
-        for c in codes:
-            c = str(c).zfill(6)
-            sina_codes.append(f"sh{c}" if c.startswith('6') else f"sz{c}")
-        
+        sina_codes = [SinaAPI._format_code(c) for c in codes]
         url = f"http://hq.sinajs.cn/list={','.join(sina_codes)}"
         headers = {'Referer': 'https://finance.sina.com.cn/'}
         
@@ -135,43 +156,71 @@ class SinaAPI:
             if not match or not match.group(2):
                 continue
             
-            code = match.group(1)[2:]
+            sina_code = match.group(1)  # e.g. sh600519 or hk00700
             parts = match.group(2).split(',')
-            if len(parts) < 32:
-                continue
             
-            try:
-                q = StockQuote(
-                    code=code,
-                    name=parts[0],
-                    open=float(parts[1] or 0),
-                    prev_close=float(parts[2] or 0),
-                    price=float(parts[3] or 0),
-                    high=float(parts[4] or 0),
-                    low=float(parts[5] or 0),
-                    volume=float(parts[8] or 0),
-                    amount=float(parts[9] or 0),
-                    timestamp=f"{parts[30]} {parts[31]}"
-                )
-                if q.prev_close > 0:
-                    q.change = q.price - q.prev_close
-                    q.change_pct = (q.change / q.prev_close) * 100
-                results[code] = q
-            except:
-                pass
+            # Detect HK stock (different format)
+            if sina_code.startswith('hk'):
+                code = sina_code  # Keep hk00700 as code
+                if len(parts) < 10:
+                    continue
+                try:
+                    q = StockQuote(
+                        code=code,
+                        name=parts[1],
+                        price=float(parts[6] or 0),
+                        prev_close=float(parts[3] or 0),
+                        open=float(parts[2] or 0),
+                        high=float(parts[4] or 0),
+                        low=float(parts[5] or 0),
+                        volume=float(parts[12] or 0),
+                        amount=float(parts[11] or 0),
+                        change=float(parts[7] or 0),
+                        change_pct=float(parts[8] or 0),
+                        timestamp=parts[17] if len(parts) > 17 else ""
+                    )
+                    results[code] = q
+                except:
+                    pass
+            else:
+                # A-share format
+                code = sina_code[2:]  # sh600519 -> 600519
+                if len(parts) < 32:
+                    continue
+                try:
+                    q = StockQuote(
+                        code=code,
+                        name=parts[0],
+                        open=float(parts[1] or 0),
+                        prev_close=float(parts[2] or 0),
+                        price=float(parts[3] or 0),
+                        high=float(parts[4] or 0),
+                        low=float(parts[5] or 0),
+                        volume=float(parts[8] or 0),
+                        amount=float(parts[9] or 0),
+                        timestamp=f"{parts[30]} {parts[31]}"
+                    )
+                    if q.prev_close > 0:
+                        q.change = q.price - q.prev_close
+                        q.change_pct = (q.change / q.prev_close) * 100
+                    results[code] = q
+                except:
+                    pass
         return results
 
 
 class TencentAPI:
-    """腾讯财经 API - 提供 PE/PB 数据"""
+    """腾讯财经 API - 提供 PE/PB 数据 (仅A股)"""
     
     @staticmethod
     def get_quotes(codes: List[str]) -> Dict[str, StockQuote]:
-        if not codes:
+        # Filter out HK stocks (Tencent API format is different for HK)
+        a_codes = [c for c in codes if not str(c).startswith('hk')]
+        if not a_codes:
             return {}
         
         qq_codes = []
-        for c in codes:
+        for c in a_codes:
             c = str(c).zfill(6)
             qq_codes.append(f"sh{c}" if c.startswith('6') else f"sz{c}")
         
@@ -219,6 +268,134 @@ class TencentAPI:
             except:
                 pass
         return results
+
+
+class HKStockAPI:
+    """港股历史数据 - 使用AKShare新浪源"""
+    
+    @staticmethod
+    def get_history(code: str, days: int = 120) -> pd.DataFrame:
+        """获取港股日K线历史 (code格式: hk00700 -> 00700)"""
+        try:
+            import akshare as ak
+            symbol = code.replace('hk', '')  # hk00700 -> 00700
+            df = ak.stock_hk_daily(symbol=symbol, adjust='qfq')
+            if df.empty:
+                return df
+            
+            # 只取最近N天
+            df['date'] = pd.to_datetime(df['date'])
+            cutoff = datetime.now() - timedelta(days=days)
+            df = df[df['date'] >= cutoff].copy()
+            df['date'] = df['date'].dt.strftime('%Y-%m-%d')
+            
+            # 计算涨跌幅
+            df['pctChg'] = df['close'].pct_change() * 100
+            
+            # Convert types
+            for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            return df.reset_index(drop=True)
+        except Exception as e:
+            print(f"[HK] History error {code}: {e}")
+            return pd.DataFrame()
+
+
+class FinancialHistoryAPI:
+    """多年财务数据 - A股用同花顺, 港股用东方财富"""
+
+    @staticmethod
+    def _parse_cn_number(s: str) -> float:
+        """解析中文数字: '1.23亿' -> 1.23, '3170.93万' -> 0.317093"""
+        if not s or s == 'False' or s is False:
+            return 0
+        s = str(s).strip()
+        try:
+            if '亿' in s:
+                return float(s.replace('亿', ''))
+            elif '万' in s:
+                return float(s.replace('万', '')) / 10000
+            elif '%' in s:
+                return float(s.replace('%', ''))
+            else:
+                return float(s)
+        except:
+            return 0
+
+    @staticmethod
+    def _parse_pct(s) -> float:
+        """解析百分比: '12.34%' -> 12.34, '306.48%' -> 306.48"""
+        if not s or s == 'False' or s is False:
+            return 0
+        try:
+            return float(str(s).replace('%', ''))
+        except:
+            return 0
+
+    @classmethod
+    def get_hk_history(cls, code: str, years: int = 5) -> List[Dict]:
+        """港股多年财务 via 东方财富"""
+        try:
+            import akshare as ak
+            symbol = code.replace('hk', '')  # hk00700 -> 00700
+            df = ak.stock_financial_hk_analysis_indicator_em(symbol=symbol)
+            if df.empty:
+                return []
+
+            result = []
+            for _, row in df.head(years).iterrows():
+                result.append(asdict(YearlyFinancials(
+                    year=str(row.get('REPORT_DATE', ''))[:10],
+                    roe=float(row.get('ROE_AVG', 0) or 0),
+                    gross_margin=float(row.get('GROSS_PROFIT_RATIO', 0) or 0),
+                    net_margin=float(row.get('NET_PROFIT_RATIO', 0) or 0),
+                    revenue_growth=float(row.get('OPERATE_INCOME_YOY', 0) or 0),
+                    profit_growth=float(row.get('HOLDER_PROFIT_YOY', 0) or 0),
+                    revenue=float(row.get('OPERATE_INCOME', 0) or 0) / 1e8,
+                    net_profit=float(row.get('HOLDER_PROFIT', 0) or 0) / 1e8,
+                    eps=float(row.get('BASIC_EPS', 0) or 0),
+                    roic=float(row.get('ROIC_YEARLY', 0) or 0),
+                    debt_ratio=float(row.get('DEBT_ASSET_RATIO', 0) or 0),
+                    current_ratio=float(row.get('CURRENT_RATIO', 0) or 0),
+                )))
+            return result
+        except Exception as e:
+            print(f"[Finance] HK history error {code}: {e}")
+            return []
+
+    @classmethod
+    def get_a_share_history(cls, code: str, years: int = 5) -> List[Dict]:
+        """A股多年财务 via 同花顺"""
+        try:
+            import akshare as ak
+            df = ak.stock_financial_abstract_ths(symbol=code)
+            if df.empty:
+                return []
+
+            # Only keep annual reports (12-31), sorted newest first
+            annual = df[df['报告期'].astype(str).str.endswith('12-31')].copy()
+            annual = annual.sort_values('报告期', ascending=False).head(years)
+
+            result = []
+            for _, row in annual.iterrows():
+                result.append(asdict(YearlyFinancials(
+                    year=str(row.get('报告期', ''))[:10],
+                    roe=cls._parse_pct(row.get('净资产收益率', 0)),
+                    gross_margin=cls._parse_pct(row.get('销售毛利率', 0)),
+                    net_margin=cls._parse_pct(row.get('销售净利率', 0)),
+                    revenue_growth=cls._parse_pct(row.get('营业总收入同比增长率', 0)),
+                    profit_growth=cls._parse_pct(row.get('净利润同比增长率', 0)),
+                    revenue=cls._parse_cn_number(row.get('营业总收入', 0)),
+                    net_profit=cls._parse_cn_number(row.get('净利润', 0)),
+                    eps=float(row.get('基本每股收益', 0) or 0),
+                    debt_ratio=cls._parse_pct(row.get('资产负债率', 0)),
+                    current_ratio=float(row.get('流动比率', 0) or 0),
+                )))
+            return result
+        except Exception as e:
+            print(f"[Finance] A-share history error {code}: {e}")
+            return []
 
 
 class BaostockAPI:
@@ -362,49 +539,101 @@ class StockDataProvider:
         self.api_calls = 0
     
     def get_quotes(self, codes: List[str]) -> Dict[str, StockQuote]:
-        """获取实时行情 (1分钟缓存), 使用腾讯API(有PE/PB)，新浪备用"""
+        """获取实时行情 (1分钟缓存), A股用腾讯(有PE/PB), 港股用新浪"""
         key = f"quotes_{'_'.join(sorted(codes))}"
         cached = self.cache.get(key, ttl_min=1)
         if cached:
             return {k: StockQuote(**v) for k, v in cached.items()}
         
-        # Primary: Tencent (has PE/PB)
-        self.api_calls += 1
-        quotes = TencentAPI.get_quotes(codes)
+        a_codes = [c for c in codes if not str(c).startswith('hk')]
+        hk_codes = [c for c in codes if str(c).startswith('hk')]
         
-        # Fallback: Sina (faster but no PE/PB)
-        if not quotes:
+        quotes = {}
+        
+        # A-shares: Tencent (has PE/PB), Sina fallback
+        if a_codes:
             self.api_calls += 1
-            quotes = SinaAPI.get_quotes(codes)
+            quotes.update(TencentAPI.get_quotes(a_codes))
+            # Fill missing with Sina
+            missing = [c for c in a_codes if c not in quotes]
+            if missing:
+                self.api_calls += 1
+                quotes.update(SinaAPI.get_quotes(missing))
+        
+        # HK stocks: Sina only
+        if hk_codes:
+            self.api_calls += 1
+            quotes.update(SinaAPI.get_quotes(hk_codes))
         
         if quotes:
             self.cache.set(key, {k: asdict(v) for k, v in quotes.items()})
         return quotes
     
     def get_history(self, code: str, days: int = 120) -> pd.DataFrame:
-        """获取历史K线 (4小时缓存)"""
+        """获取历史K线 (4小时缓存), A股用Baostock, 港股用AKShare新浪源"""
         key = f"hist_{code}_{days}"
         cached = self.cache.get(key, ttl_min=240)
         if cached is not None:
             return pd.DataFrame(cached)
         
         self.api_calls += 1
-        df = BaostockAPI.get_history(code, days)
+        if str(code).startswith('hk'):
+            df = HKStockAPI.get_history(code, days)
+        else:
+            df = BaostockAPI.get_history(code, days)
+        
         if not df.empty:
             self.cache.set(key, df.to_dict('records'))
         return df
     
     def get_financials(self, code: str) -> StockFinancials:
-        """获取财务数据 (24小时缓存)"""
+        """获取最新财务数据 (24小时缓存), A股用Baostock, 港股用东方财富"""
         key = f"fin_{code}"
         cached = self.cache.get(key, ttl_min=1440)
         if cached:
             return StockFinancials(**cached)
         
         self.api_calls += 1
-        fin = BaostockAPI.get_financials(code)
+        if str(code).startswith('hk'):
+            # 港股: 从5年财务中取最新一期
+            history = FinancialHistoryAPI.get_hk_history(code, years=1)
+            if history:
+                h = history[0]
+                fin = StockFinancials(
+                    code=code,
+                    roe=h['roe'], gross_margin=h['gross_margin'],
+                    net_margin=h['net_margin'], revenue_growth=h['revenue_growth'],
+                    profit_growth=h['profit_growth'], debt_ratio=h['debt_ratio'],
+                    current_ratio=h['current_ratio'],
+                    timestamp=datetime.now().isoformat()
+                )
+            else:
+                fin = StockFinancials(code=code)
+        else:
+            fin = BaostockAPI.get_financials(code)
+        
         self.cache.set(key, asdict(fin))
         return fin
+    
+    def get_financial_history(self, code: str, years: int = None) -> List[Dict]:
+        """获取多年财务历史 (24小时缓存). A股默认10年, 港股默认5年"""
+        if years is None:
+            years = 9 if str(code).startswith('hk') else 10
+        
+        key = f"fin_hist_{code}_{years}"
+        cached = self.cache.get(key, ttl_min=1440)
+        if cached is not None:
+            return cached
+        
+        self.api_calls += 1
+        if str(code).startswith('hk'):
+            result = FinancialHistoryAPI.get_hk_history(code, years)
+        else:
+            result = FinancialHistoryAPI.get_a_share_history(code, years)
+        
+        if result:
+            self.cache.set(key, result)
+        return result
     
     def prefetch(self, codes: List[str]):
         """预加载数据"""

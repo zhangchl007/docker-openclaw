@@ -28,7 +28,11 @@
       {"code": "300347", "name": "泰格医药", "market": "SZ"},
       {"code": "300759", "name": "康龙化成", "market": "SZ"},
       {"code": "300633", "name": "开立医疗", "market": "SZ"},
-      {"code": "688366", "name": "昊海生科", "market": "SH"}
+      {"code": "688366", "name": "昊海生科", "market": "SH"},
+      {"code": "002209", "name": "达意隆", "market": "SZ"}
+    ],
+    "港股": [
+      {"code": "hk00700", "name": "腾讯控股", "market": "HK"}
     ]
   },
   "indices": [
