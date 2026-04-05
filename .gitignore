@@ -1,0 +1,58 @@
+# OpenClaw Docker
+# ================
+# SECURITY: This file protects sensitive data from being committed
+
+# ===================
+# SENSITIVE DATA - NEVER COMMIT
+# ===================
+
+# Main config (contains auth tokens)
+data/openclaw.json
+data/openclaw.json.bak
+data/update-check.json
+
+# Device identity (contains PRIVATE KEYS)
+data/identity/
+
+# Device pairing (contains tokens)
+data/devices/
+
+# Logs (may contain sensitive info)
+data/logs/
+
+# Task database
+data/tasks/
+
+# Catch-all for any new sensitive files in data/
+data/*.json
+data/*.sqlite
+data/*.db
+
+# ===================
+# SAFE TO COMMIT
+# ===================
+
+# Keep canvas for custom UI (no secrets)
+!data/canvas/
+!data/canvas/.gitkeep
+
+# ===================
+# GENERAL IGNORES
+# ===================
+
+# Docker
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*~
+
+# Editor files
+.vscode/settings.json
+.idea/
+
+# Environment files (if any)
+.env
+.env.*
+!.env.example

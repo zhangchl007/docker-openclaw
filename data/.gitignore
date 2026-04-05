@@ -1,0 +1,25 @@
+# OpenClaw Data Directory
+# This directory contains persistent data for OpenClaw.
+# Do not commit sensitive files like openclaw.json to version control.
+
+# Config files (contain tokens/secrets)
+openclaw.json
+openclaw.json.bak
+update-check.json
+
+# Device authentication
+devices/
+
+# Identity files
+identity/
+
+# Logs
+logs/
+
+# Task database
+tasks/
+
+# Keep canvas directory (custom UI)
+!canvas/
+canvas/*
+!canvas/.gitkeep

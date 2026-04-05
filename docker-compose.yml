@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  openclaw-gateway:
+    # 使用官方预构建镜像（推荐，避免本地编译）
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw
+    restart: unless-stopped
+    # 安全绑定：仅监听127.0.0.1，防止公网直接暴露
+    ports:
+      - "127.0.0.1:18789:18789"
+    volumes:
+      # 持久化配置、会话、记忆数据
+      - ./data:/home/node/.openclaw
+      # 如需让AI操作宿主机文件，可挂载额外目录（可选）
+      # - /宿主机路径:/容器内路径:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+      # 让gateway绑定到所有接口，这样Docker端口映射才能正常工作
+      - OPENCLAW_GATEWAY_BIND=lan
+      # 如需配置代理（使用宿主机代理）
+      # - http_proxy=http://host.docker.internal:7890
+      # - https_proxy=http://host.docker.internal:7890
+    # 安全加固：降低容器权限
+    cap_drop:
+      - NET_RAW
+      - NET_ADMIN
+    security_opt:
+      - no-new-privileges:true

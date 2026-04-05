@@ -1,0 +1,24 @@
+{
+  "_comment": "Example configuration - copy to data/openclaw.json and customize",
+  "messages": {
+    "ackReactionScope": "group-mentions"
+  },
+  "agents": {
+    "defaults": {
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      },
+      "compaction": {
+        "mode": "safeguard"
+      }
+    }
+  },
+  "gateway": {
+    "auth": {
+      "mode": "token",
+      "token": "YOUR_TOKEN_WILL_BE_AUTO_GENERATED"
+    },
+    "bind": "lan"
+  }
+}
