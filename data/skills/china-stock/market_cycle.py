@@ -235,7 +235,7 @@ class MarketCycleAnalyzer:
         self.cache_path = Path('/home/node/.openclaw/stock-data/cache/macro_data.json')
         self.manual_path = Path('/home/node/.openclaw/stock-data/market-cycle.json')
 
-    def _load_cache(self, ttl_hours: int = 4) -> Dict:
+    def _load_cache(self, ttl_hours: int = 24) -> Dict:
         if self.cache_path.exists():
             try:
                 with open(self.cache_path) as f:

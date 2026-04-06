@@ -91,16 +91,26 @@ class Notifier:
     
     def _split_message(self, message: str, max_bytes: int = 3800) -> list:
         """
-        Split a long message into multiple parts at section boundaries.
-        Each part stays under max_bytes (UTF-8).
+        Split a long message into multiple parts.
+        Tries section boundaries first, falls back to line-by-line splitting.
         """
+        # If message fits, return as-is
+        if len(message.encode('utf-8')) <= max_bytes:
+            return [message]
+        
+        # Try splitting at section boundaries
         sections = re.split(r'\n(?=### |\n## |\n---)', message)
+        
+        # If only 1 section (no boundaries), split by lines
+        if len(sections) <= 1:
+            sections = message.split('\n')
         
         parts = []
         current = ""
         
         for section in sections:
-            test = current + section
+            line = section if not current else ('\n' + section)
+            test = current + line
             if len(test.encode('utf-8')) > max_bytes and current:
                 parts.append(current.rstrip())
                 current = section

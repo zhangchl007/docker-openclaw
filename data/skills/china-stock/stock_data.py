@@ -16,6 +16,7 @@ import re
 import hashlib
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -106,21 +107,23 @@ class YearlyFinancials:
 
 
 class SimpleCache:
-    """简单缓存"""
+    """Thread-safe file + memory cache"""
     
     def __init__(self, cache_dir: str = "/home/node/.openclaw/stock-data/cache"):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._mem: Dict[str, tuple] = {}
+        self._lock = threading.Lock()
     
     def _path(self, key: str) -> Path:
         return self.cache_dir / f"{hashlib.md5(key.encode()).hexdigest()[:12]}.json"
     
     def get(self, key: str, ttl_min: int = 60) -> Optional[Any]:
-        if key in self._mem:
-            data, ts = self._mem[key]
-            if time.time() - ts < ttl_min * 60:
-                return data
+        with self._lock:
+            if key in self._mem:
+                data, ts = self._mem[key]
+                if time.time() - ts < ttl_min * 60:
+                    return data
         
         path = self._path(key)
         if path.exists():
@@ -129,14 +132,16 @@ class SimpleCache:
                     cached = json.load(f)
                 ts = datetime.fromisoformat(cached['ts'])
                 if datetime.now() - ts < timedelta(minutes=ttl_min):
-                    self._mem[key] = (cached['data'], ts.timestamp())
+                    with self._lock:
+                        self._mem[key] = (cached['data'], ts.timestamp())
                     return cached['data']
             except:
                 pass
         return None
     
     def set(self, key: str, data: Any):
-        self._mem[key] = (data, time.time())
+        with self._lock:
+            self._mem[key] = (data, time.time())
         try:
             with open(self._path(key), 'w') as f:
                 json.dump({'ts': datetime.now().isoformat(), 'data': data}, f)
@@ -633,12 +638,47 @@ class StockDataProvider:
         return quotes
     
     def get_history(self, code: str, days: int = 120) -> pd.DataFrame:
-        """获取历史K线 (4小时缓存), A股用Baostock, 港股用AKShare新浪源"""
+        """获取历史K线 - 增量更新
+        
+        策略：
+        1. 有缓存 + 未过期(8h) → 直接返回
+        2. 有缓存 + 已过期 → 只拉最近10天，合并到缓存（增量）
+        3. 无缓存 → 全量拉取120天
+        """
         key = f"hist_{code}_{days}"
-        cached = self.cache.get(key, ttl_min=240)
+        
+        # Check fresh cache
+        cached = self.cache.get(key, ttl_min=480)  # 8 hours
         if cached is not None:
             return pd.DataFrame(cached)
         
+        # Check stale cache for incremental update
+        stale = self.cache.get(key, ttl_min=999999)  # Any age
+        if stale is not None and len(stale) > 20:
+            # Incremental: only fetch last 10 days and merge
+            self.api_calls += 1
+            if str(code).startswith('hk'):
+                new_df = HKStockAPI.get_history(code, days=10)
+            else:
+                new_df = BaostockAPI.get_history(code, days=10)
+            
+            if not new_df.empty:
+                old_df = pd.DataFrame(stale)
+                # Merge: keep old rows not in new, then append new
+                if 'date' in old_df.columns and 'date' in new_df.columns:
+                    new_dates = set(new_df['date'].astype(str))
+                    old_keep = old_df[~old_df['date'].astype(str).isin(new_dates)]
+                    merged = pd.concat([old_keep, new_df], ignore_index=True)
+                    # Trim to requested days
+                    merged = merged.tail(days)
+                    self.cache.set(key, merged.to_dict('records'))
+                    return merged
+            
+            # If incremental failed, return stale and refresh cache timestamp
+            self.cache.set(key, stale)
+            return pd.DataFrame(stale)
+        
+        # Full fetch (no cache at all)
         self.api_calls += 1
         if str(code).startswith('hk'):
             df = HKStockAPI.get_history(code, days)
@@ -679,12 +719,12 @@ class StockDataProvider:
         return fin
     
     def get_financial_history(self, code: str, years: int = None) -> List[Dict]:
-        """获取多年财务历史 (24小时缓存). A股默认10年, 港股默认5年"""
+        """获取多年财务历史 (7天缓存-年报数据变化极慢). A股默认10年, 港股默认9年"""
         if years is None:
             years = 9 if str(code).startswith('hk') else 10
         
         key = f"fin_hist_{code}_{years}"
-        cached = self.cache.get(key, ttl_min=1440)
+        cached = self.cache.get(key, ttl_min=10080)  # 7 days
         if cached is not None:
             return cached
         
@@ -699,17 +739,54 @@ class StockDataProvider:
         return result
     
     def prefetch(self, codes: List[str]):
-        """预加载数据"""
+        """预加载数据 - 并行化
+        
+        Strategy:
+        - Quotes: 1 batch call (already fast)
+        - Baostock (K-lines + financials): serial (shared login, not thread-safe)
+        - AKShare (financial history): parallel threads (independent HTTP calls)
+        """
         print(f"[Data] Prefetching {len(codes)} stocks...")
         t0 = time.time()
         c0 = self.api_calls
-        
+
+        # 1. Batch quotes (already 1 call)
         self.get_quotes(codes)
+
+        # 2. Baostock data: serial (K-lines + latest financials)
+        #    These share a single Baostock login session
         for code in codes:
             self.get_history(code)
             self.get_financials(code)
-        
+
+        # 3. Financial history: parallel threads
+        #    Each call is independent HTTP to AKShare/同花顺
+        uncached = []
+        for code in codes:
+            years = 9 if str(code).startswith('hk') else 10
+            key = f"fin_hist_{code}_{years}"
+            if self.cache.get(key, ttl_min=10080) is None:
+                uncached.append(code)
+
+        if uncached:
+            print(f"[Data] Parallel fetching {len(uncached)} financial histories...")
+            with ThreadPoolExecutor(max_workers=min(4, len(uncached))) as executor:
+                futures = {
+                    executor.submit(self._fetch_fin_history, code): code
+                    for code in uncached
+                }
+                for future in as_completed(futures):
+                    code = futures[future]
+                    try:
+                        future.result()
+                    except Exception as e:
+                        print(f"  [!] {code}: {e}")
+
         print(f"[Data] Done: {self.api_calls - c0} calls, {time.time()-t0:.2f}s")
+
+    def _fetch_fin_history(self, code: str):
+        """Fetch financial history for a single stock (used by parallel prefetch)"""
+        self.get_financial_history(code)
     
     def cleanup(self):
         BaostockAPI.logout()

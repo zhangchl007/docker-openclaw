@@ -287,10 +287,37 @@ class StockReportRunner:
             self.log('error', f'周报失败: {e}\n{traceback.format_exc()}')
             return {'status': 'error', 'error': str(e)}
 
+    def run_warmup(self) -> dict:
+        """收盘后预热缓存 — 拉取全部数据，第二天报告秒出"""
+        self.log('info', '预热缓存...')
+        try:
+            import time
+            t0 = time.time()
+            codes = self.get_all_codes()
+
+            # 1. 预热K线+财务+财务历史(含并行)
+            self.provider.prefetch(codes)
+
+            # 2. 预热事件数据
+            try:
+                from events import EventScanner
+                es = EventScanner()
+                es.scan_all()
+            except:
+                pass
+
+            elapsed = time.time() - t0
+            self.log('info', f'缓存预热完成: {len(codes)}只股票, {elapsed:.1f}s')
+            return {'status': 'success', 'stocks': len(codes), 'elapsed': round(elapsed, 1)}
+
+        except Exception as e:
+            self.log('error', f'缓存预热失败: {e}')
+            return {'status': 'error', 'error': str(e)}
+
 
 def main():
     parser = argparse.ArgumentParser(description='Stock Report Runner')
-    parser.add_argument('action', choices=['morning', 'midday', 'close', 'alert', 'weekly', 'test'])
+    parser.add_argument('action', choices=['morning', 'midday', 'close', 'alert', 'weekly', 'warmup', 'test'])
     args = parser.parse_args()
 
     runner = StockReportRunner()
@@ -301,6 +328,7 @@ def main():
         'close': runner.run_close,
         'alert': runner.run_alert,
         'weekly': runner.run_weekly,
+        'warmup': runner.run_warmup,
     }
 
     if args.action == 'test':
