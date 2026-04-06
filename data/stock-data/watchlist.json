@@ -280,6 +280,29 @@
           "risk_level": "medium"
         }
       ]
+    },
+
+    "日化消费": {
+      "industry": "C26 化学原料和化学制品制造业(日化/化妆品)",
+      "cycle_type": "弱周期/消费",
+      "moat_type": "品牌+渠道+研发",
+      "key_drivers": ["消费升级", "国货替代", "线上渠道(抖音/直播)", "大单品策略"],
+      "risk_factors": ["消费疲软", "流量成本上升", "竞争加剧(国际品牌降价)", "渠道变革风险"],
+      "valuation_anchor": "PE 20-35x，高端化妆品可给更高估值",
+      "benchmark_roe": 18,
+      "benchmark_margin": 65,
+      "cycle_notes": "化妆品行业受益于消费升级和国货崛起，但2023-2024经历消费降级和流量红利消退。大单品+研发驱动是核心竞争力。",
+      "stocks": [
+        {
+          "code": "603605", "name": "珀莱雅", "market": "SH",
+          "sub_industry": "化妆品/护肤品",
+          "position": "国货化妆品龙头，大单品策略标杆",
+          "competitive_edge": "大单品矩阵(双抗精华/红宝石面霜)+抖音渠道领先+研发投入持续加大",
+          "watch_points": ["大单品销售增速", "线上渠道占比(抖音vs天猫)", "毛利率趋势", "新品牌孵化(彩棠/Off&Relax)"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        }
+      ]
     }
   },
 
