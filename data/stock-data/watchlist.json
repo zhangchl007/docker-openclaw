@@ -1,57 +1,305 @@
 {
-  "version": 1,
+  "version": 2,
   "name": "china-stock-watchlist",
-  "description": "我的中国股票自选列表",
-  "updated": "2026-04-05",
-  "groups": {
-    "白酒": [
-      {"code": "600519", "name": "贵州茅台", "market": "SH"},
-      {"code": "000858", "name": "五粮液", "market": "SZ"},
-      {"code": "000568", "name": "泸州老窖", "market": "SZ"}
-    ],
-    "新能源": [
-      {"code": "300750", "name": "宁德时代", "market": "SZ"},
-      {"code": "002594", "name": "比亚迪", "market": "SZ"},
-      {"code": "600438", "name": "通威股份", "market": "SH"}
-    ],
-    "科技": [
-      {"code": "002415", "name": "海康威视", "market": "SZ"},
-      {"code": "300059", "name": "东方财富", "market": "SZ"},
-      {"code": "002230", "name": "科大讯飞", "market": "SZ"}
-    ],
-    "金融": [
-      {"code": "601318", "name": "中国平安", "market": "SH"},
-      {"code": "600036", "name": "招商银行", "market": "SH"},
-      {"code": "601166", "name": "兴业银行", "market": "SH"}
-    ],
-    "医药": [
-      {"code": "300347", "name": "泰格医药", "market": "SZ"},
-      {"code": "300759", "name": "康龙化成", "market": "SZ"},
-      {"code": "300633", "name": "开立医疗", "market": "SZ"},
-      {"code": "688366", "name": "昊海生科", "market": "SH"},
-      {"code": "002209", "name": "达意隆", "market": "SZ"}
-    ],
-    "港股": [
-      {"code": "hk00700", "name": "腾讯控股", "market": "HK"}
-    ]
+  "updated": "2026-04-06",
+
+  "sectors": {
+    "白酒": {
+      "industry": "C15 酒饮料和精制茶制造业",
+      "cycle_type": "弱周期/消费",
+      "moat_type": "品牌+渠道+产能",
+      "key_drivers": ["消费升级", "价格带卡位", "渠道控制力", "品牌心智"],
+      "risk_factors": ["消费降级", "政策限制(反腐)", "人口结构变化", "库存周期"],
+      "valuation_anchor": "PE 20-35x为合理区间",
+      "benchmark_roe": 25,
+      "benchmark_margin": 90,
+      "cycle_notes": "白酒周期约5-7年，与宏观经济弱相关。库存周期是核心观察指标。",
+      "stocks": [
+        {
+          "code": "600519", "name": "贵州茅台", "market": "SH",
+          "sub_industry": "高端白酒",
+          "position": "行业绝对龙头，定价权最强",
+          "competitive_edge": "品牌垄断+社交属性+金融属性，毛利率91%+",
+          "watch_points": ["批价走势", "直营占比提升", "i茅台渠道"],
+          "lynch_category": "stalwart",
+          "risk_level": "low"
+        },
+        {
+          "code": "000858", "name": "五粮液", "market": "SZ",
+          "sub_industry": "高端白酒",
+          "position": "行业第二，品牌力次于茅台",
+          "competitive_edge": "品牌+产能优势，普五价格带龙头",
+          "watch_points": ["与茅台价差", "渠道改革进度", "系列酒增长"],
+          "lynch_category": "stalwart",
+          "risk_level": "low"
+        },
+        {
+          "code": "000568", "name": "泸州老窖", "market": "SZ",
+          "sub_industry": "高端白酒",
+          "position": "浓香龙头，品牌复兴标杆",
+          "competitive_edge": "国窖1573品牌势能，窖池稀缺性",
+          "watch_points": ["国窖批价", "特曲放量", "管理层稳定性"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        }
+      ]
+    },
+
+    "新能源": {
+      "industry": "C36汽车/C38电气机械制造业",
+      "cycle_type": "强周期/成长",
+      "moat_type": "技术+规模+成本",
+      "key_drivers": ["渗透率提升", "技术迭代", "出海需求", "政策补贴"],
+      "risk_factors": ["产能过剩", "技术路线切换", "贸易摩擦(关税)", "补贴退坡"],
+      "valuation_anchor": "PEG<1为合理，PE 15-30x取决于增速",
+      "benchmark_roe": 20,
+      "benchmark_margin": 25,
+      "cycle_notes": "新能源渗透率S曲线中段，增速从爆发进入稳定期。产能周期约3-4年。",
+      "stocks": [
+        {
+          "code": "300750", "name": "宁德时代", "market": "SZ",
+          "sub_industry": "动力电池(C38)",
+          "position": "全球动力电池龙头，市占率35%+",
+          "competitive_edge": "技术迭代速度+规模效应+客户绑定",
+          "watch_points": ["装机量增速", "海外工厂进度", "固态电池进展", "毛利率变化"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
+        },
+        {
+          "code": "002594", "name": "比亚迪", "market": "SZ",
+          "sub_industry": "新能源整车(C36)+电池+半导体",
+          "position": "垂直整合龙头，全球新能源车销量第一",
+          "competitive_edge": "全产业链(电池+电机+电控+整车+半导体)，成本控制极强",
+          "watch_points": ["月销量", "海外市场份额", "高端化(仰望/腾势)", "智能驾驶"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
+        },
+        {
+          "code": "600438", "name": "通威股份", "market": "SH",
+          "sub_industry": "光伏硅料+电池片(C38)",
+          "position": "硅料和电池片双龙头",
+          "competitive_edge": "硅料成本最低(西南水电)+电池片产能全球第一",
+          "watch_points": ["硅料价格走势", "电池片价格", "产能利用率", "组件一体化"],
+          "lynch_category": "cyclical",
+          "risk_level": "high"
+        }
+      ]
+    },
+
+    "科技": {
+      "industry": "C39电子/I65软件信息技术",
+      "cycle_type": "成长/主题",
+      "moat_type": "技术+数据+生态",
+      "key_drivers": ["AI应用落地", "数字经济", "国产替代", "数据资产"],
+      "risk_factors": ["估值泡沫", "技术路线不确定", "政策监管", "商业化进度"],
+      "valuation_anchor": "PS或PEG估值为主，盈利公司可用PE",
+      "benchmark_roe": 15,
+      "benchmark_margin": 40,
+      "cycle_notes": "科技股估值波动极大，适合趋势交易。AI浪潮约2-3年一个主题周期。",
+      "stocks": [
+        {
+          "code": "002415", "name": "海康威视", "market": "SZ",
+          "sub_industry": "安防/AI视觉(C39)",
+          "position": "全球安防龙头，AI转型中",
+          "competitive_edge": "渠道+品牌+技术积累，AI开放平台生态",
+          "watch_points": ["创新业务占比", "海外收入(制裁影响)", "机器人业务"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        },
+        {
+          "code": "002230", "name": "科大讯飞", "market": "SZ",
+          "sub_industry": "AI语音/大模型(I65)",
+          "position": "中国AI语音龙头，星火大模型",
+          "competitive_edge": "语音技术积累+教育/政务场景+大模型布局",
+          "watch_points": ["大模型商业化收入", "C端产品(办公本/翻译机)", "政府订单"],
+          "lynch_category": "speculative",
+          "risk_level": "high"
+        }
+      ]
+    },
+
+    "金融": {
+      "industry": "J66银行/J67资本市场/J68保险",
+      "cycle_type": "周期/价值",
+      "moat_type": "牌照+规模+风控",
+      "key_drivers": ["利率周期", "资产质量", "财富管理转型", "分红率"],
+      "risk_factors": ["利差收窄", "房地产风险敞口", "监管政策", "经济下行"],
+      "valuation_anchor": "PB 0.5-1.2x为合理，分红率是核心锚",
+      "benchmark_roe": 12,
+      "benchmark_margin": 0,
+      "cycle_notes": "银行与利率/信贷周期强相关。低利率下NIM承压但资产质量改善。",
+      "stocks": [
+        {
+          "code": "601318", "name": "中国平安", "market": "SH",
+          "sub_industry": "综合金融/保险(J68)",
+          "position": "综合金融龙头(寿险+财险+银行+科技)",
+          "competitive_edge": "综合金融生态+科技赋能",
+          "watch_points": ["NBV(新业务价值)", "代理人产能", "综合成本率", "地产敞口"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        },
+        {
+          "code": "600036", "name": "招商银行", "market": "SH",
+          "sub_industry": "零售银行(J66)",
+          "position": "零售银行之王，财富管理龙头",
+          "competitive_edge": "零售客户基础(AUM)+低成本负债+品牌",
+          "watch_points": ["AUM增速", "净息差(NIM)", "不良率", "分红率"],
+          "lynch_category": "stalwart",
+          "risk_level": "low"
+        },
+        {
+          "code": "601166", "name": "兴业银行", "market": "SH",
+          "sub_industry": "同业/绿色金融(J66)",
+          "position": "同业之王，绿色金融先行者",
+          "competitive_edge": "同业业务能力+绿色金融品牌",
+          "watch_points": ["同业负债成本", "绿色贷款规模", "净息差", "资产质量"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
+        },
+        {
+          "code": "300059", "name": "东方财富", "market": "SZ",
+          "sub_industry": "互联网券商/基金代销(J67)",
+          "position": "互联网券商龙头+基金代销龙头",
+          "competitive_edge": "流量入口(天天基金/东方财富网)+低获客成本",
+          "watch_points": ["日均成交额", "基金代销份额", "两融余额", "市场情绪"],
+          "lynch_category": "cyclical",
+          "risk_level": "high"
+        }
+      ]
+    },
+
+    "CRO": {
+      "industry": "M73 研究和试验发展",
+      "cycle_type": "周期/成长",
+      "moat_type": "人才+客户粘性+一体化能力",
+      "key_drivers": ["全球创新药研发投入", "中国工程师红利", "出海", "Biotech融资"],
+      "risk_factors": ["地缘政治(制裁)", "Biotech融资收缩", "人才流失", "汇率波动"],
+      "valuation_anchor": "PE 20-40x，在手订单增速是核心",
+      "benchmark_roe": 15,
+      "benchmark_margin": 35,
+      "cycle_notes": "CRO行业2020-2021景气高峰(COVID+融资潮)，2022-2024下行(融资收缩+地缘风险)，2025开始触底回暖。",
+      "stocks": [
+        {
+          "code": "300347", "name": "泰格医药", "market": "SZ",
+          "sub_industry": "临床CRO",
+          "position": "国内临床CRO龙头",
+          "competitive_edge": "临床试验管理能力+海外临床网络+投资收益(创新药股权)",
+          "watch_points": ["在手订单增速", "海外收入占比", "投资收益波动", "人均产出"],
+          "peer_group": "CRO",
+          "peer_compare": ["300759"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
+        },
+        {
+          "code": "300759", "name": "康龙化成", "market": "SZ",
+          "sub_industry": "CRO+CDMO一体化",
+          "position": "CXO一体化平台，实验室化学起家",
+          "competitive_edge": "一体化服务(发现→临床前→临床→商业化)+化学能力强",
+          "watch_points": ["实验室化学订单", "大分子/CGT新业务", "产能利用率", "海外客户占比"],
+          "peer_group": "CRO",
+          "peer_compare": ["300347"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
+        }
+      ]
+    },
+
+    "医疗器械": {
+      "industry": "C35 专用设备制造业(医疗)",
+      "cycle_type": "成长",
+      "moat_type": "技术壁垒+注册证+渠道",
+      "key_drivers": ["国产替代", "集采后份额集中", "出海", "老龄化"],
+      "risk_factors": ["集采降价", "技术追赶不及预期", "审批周期长"],
+      "valuation_anchor": "PE 15-30x，关注收入增速和国产替代进度",
+      "benchmark_roe": 12,
+      "benchmark_margin": 60,
+      "cycle_notes": "医疗器械国产替代黄金期，高端设备(内镜/超声)渗透率仍低。集采短期压制但长期利好龙头。",
+      "stocks": [
+        {
+          "code": "300633", "name": "开立医疗", "market": "SZ",
+          "sub_industry": "超声+内镜设备",
+          "position": "国产超声和内镜龙头",
+          "competitive_edge": "超声设备国产替代+内镜技术突破(vs奥林巴斯)",
+          "watch_points": ["高端超声占比", "内镜装机量", "海外收入增速", "集采影响"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
+        },
+        {
+          "code": "688366", "name": "昊海生科", "market": "SH",
+          "sub_industry": "眼科+医美生物材料",
+          "position": "玻尿酸+人工晶体双龙头",
+          "competitive_edge": "玻尿酸产品矩阵+人工晶体国产替代+眼科全产业链",
+          "watch_points": ["医美产品线", "人工晶体集采影响", "眼科渠道扩张"],
+          "lynch_category": "slow_grower",
+          "risk_level": "medium"
+        }
+      ]
+    },
+
+    "装备制造": {
+      "industry": "C35 专用设备制造业(包装)",
+      "cycle_type": "周期/成长",
+      "moat_type": "客户绑定+技术积累",
+      "key_drivers": ["下游扩产(饮料/啤酒)", "自动化替代人工", "出海"],
+      "risk_factors": ["下游资本开支波动", "竞争加剧", "原材料成本"],
+      "valuation_anchor": "PE 15-25x",
+      "benchmark_roe": 10,
+      "benchmark_margin": 25,
+      "cycle_notes": "包装设备与下游消费品企业资本开支周期相关，通常滞后消费复苏1-2个季度。",
+      "stocks": [
+        {
+          "code": "002209", "name": "达意隆", "market": "SZ",
+          "sub_industry": "智能包装设备",
+          "position": "饮料包装设备龙头",
+          "competitive_edge": "饮料行业自动化设备+客户绑定(可口可乐/农夫山泉)",
+          "watch_points": ["大客户订单", "海外收入", "新品类拓展(啤酒/乳品)"],
+          "lynch_category": "turnaround",
+          "risk_level": "high"
+        }
+      ]
+    },
+
+    "港股": {
+      "industry": "互联网平台",
+      "cycle_type": "成长/平台",
+      "moat_type": "网络效应+生态+数据",
+      "key_drivers": ["游戏版号", "AI应用", "视频号商业化", "出海"],
+      "risk_factors": ["监管政策", "反垄断", "宏观经济(广告)", "估值中枢下移"],
+      "valuation_anchor": "SOTP分部估值，游戏15-20xPE，广告20-25xPE",
+      "benchmark_roe": 20,
+      "benchmark_margin": 30,
+      "cycle_notes": "互联网平台从高增长进入成熟期，ROE稳定20%+。关注回购+分红提升股东回报。",
+      "stocks": [
+        {
+          "code": "hk00700", "name": "腾讯控股", "market": "HK",
+          "sub_industry": "互联网平台(社交+游戏+金融)",
+          "position": "中国互联网绝对龙头",
+          "competitive_edge": "微信生态(13亿用户)+游戏全球化+投资帝国",
+          "watch_points": ["游戏流水", "视频号商业化", "AI应用(混元大模型)", "回购金额"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        }
+      ]
+    }
   },
+
   "indices": [
     {"code": "000001", "name": "上证指数", "market": "SH"},
     {"code": "399001", "name": "深证成指", "market": "SZ"},
     {"code": "399006", "name": "创业板指", "market": "SZ"}
   ],
+
   "alerts": {
-    "600519": {
-      "name": "贵州茅台",
-      "priceAbove": 1900,
-      "priceBelow": 1600,
-      "changePercent": 5
-    },
-    "300750": {
-      "name": "宁德时代",
-      "priceAbove": 250,
-      "priceBelow": 150,
-      "changePercent": 7
-    }
+    "600519": {"name": "贵州茅台", "priceAbove": 1900, "priceBelow": 1600, "changePercent": 5},
+    "300750": {"name": "宁德时代", "priceAbove": 250, "priceBelow": 150, "changePercent": 7}
+  },
+
+  "lynch_categories": {
+    "slow_grower": "缓慢增长股(增速<5%,高分红)",
+    "stalwart": "稳健增长股(增速10-15%,大白马)",
+    "fast_grower": "快速增长股(增速20%+,关注持续性)",
+    "cyclical": "周期股(跟踪行业周期拐点)",
+    "turnaround": "困境反转股(关注催化剂)",
+    "speculative": "投机股(高风险高回报)"
   }
 }

@@ -31,6 +31,26 @@ except ImportError:
     BAOSTOCK_AVAILABLE = False
 
 
+def parse_watchlist(wl: Dict) -> Dict[str, List[Dict]]:
+    """Parse watchlist v1 (groups) or v2 (sectors) format.
+    Returns: {sector_name: [{'code':..., 'name':..., ...}, ...]}
+    """
+    # v2 format: sectors with industry metadata
+    if 'sectors' in wl:
+        result = {}
+        for name, sector in wl['sectors'].items():
+            stocks = sector.get('stocks', [])
+            # Attach sector metadata to each stock
+            for s in stocks:
+                s['_sector'] = name
+                s['_industry'] = sector.get('industry', '')
+                s['_cycle_type'] = sector.get('cycle_type', '')
+            result[name] = stocks
+        return result
+    # v1 format: simple groups
+    return wl.get('groups', {})
+
+
 @dataclass
 class StockQuote:
     """实时行情"""
@@ -61,6 +81,9 @@ class StockFinancials:
     profit_growth: float = 0.0
     debt_ratio: float = 0.0
     current_ratio: float = 0.0
+    # 银行专属指标
+    roa: float = 0.0           # 总资产利润率 (银行约1%为正常)
+    dividend_yield: float = 0.0 # 股息率
     timestamp: str = ""
 
 
@@ -79,6 +102,7 @@ class YearlyFinancials:
     roic: float = 0.0
     debt_ratio: float = 0.0
     current_ratio: float = 0.0
+    roa: float = 0.0           # 总资产利润率
 
 
 class SimpleCache:
@@ -366,7 +390,7 @@ class FinancialHistoryAPI:
 
     @classmethod
     def get_a_share_history(cls, code: str, years: int = 5) -> List[Dict]:
-        """A股多年财务 via 同花顺"""
+        """A股多年财务 via 同花顺 + ROA补充"""
         try:
             import akshare as ak
             df = ak.stock_financial_abstract_ths(symbol=code)
@@ -377,10 +401,24 @@ class FinancialHistoryAPI:
             annual = df[df['报告期'].astype(str).str.endswith('12-31')].copy()
             annual = annual.sort_values('报告期', ascending=False).head(years)
 
+            # Try to get ROA data from analysis_indicator
+            roa_map = {}
+            try:
+                start_yr = str(int(annual['报告期'].iloc[-1][:4]) - 1) if len(annual) > 0 else '2015'
+                df_ind = ak.stock_financial_analysis_indicator(symbol=code, start_year=start_yr)
+                if not df_ind.empty:
+                    annual_ind = df_ind[df_ind['日期'].astype(str).str.endswith('-12-31')]
+                    for _, r in annual_ind.iterrows():
+                        yr = str(r['日期'])[:10]
+                        roa_map[yr] = float(r.get('总资产利润率(%)', 0) or 0)
+            except:
+                pass
+
             result = []
             for _, row in annual.iterrows():
+                yr = str(row.get('报告期', ''))[:10]
                 result.append(asdict(YearlyFinancials(
-                    year=str(row.get('报告期', ''))[:10],
+                    year=yr,
                     roe=cls._parse_pct(row.get('净资产收益率', 0)),
                     gross_margin=cls._parse_pct(row.get('销售毛利率', 0)),
                     net_margin=cls._parse_pct(row.get('销售净利率', 0)),
@@ -391,6 +429,7 @@ class FinancialHistoryAPI:
                     eps=float(row.get('基本每股收益', 0) or 0),
                     debt_ratio=cls._parse_pct(row.get('资产负债率', 0)),
                     current_ratio=float(row.get('流动比率', 0) or 0),
+                    roa=roa_map.get(yr, 0),
                 )))
             return result
         except Exception as e:
@@ -516,6 +555,20 @@ class BaostockAPI:
                         growth_found = True
             except:
                 pass
+        
+        # ROA from dupont data (useful for banks)
+        try:
+            for y, q in [(year, 4), (year, 3), (year-1, 4)]:
+                rs = bs.query_dupont_data(code=bs_code, year=y, quarter=q)
+                if rs.error_code == '0' and rs.next():
+                    d = dict(zip(rs.fields, rs.get_row_data()))
+                    roe_d = float(d.get('dupontROE', 0) or 0)
+                    leverage = float(d.get('dupontAssetStoEquity', 0) or 0)
+                    if roe_d > 0 and leverage > 0:
+                        fin.roa = roe_d / leverage * 100  # ROA = ROE / leverage
+                        break
+        except:
+            pass
         
         return fin
 

@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from stock_data import get_provider, StockQuote
+from stock_data import get_provider, StockQuote, parse_watchlist
 from analyzers import MasterAnalyzer
 from notifier import Notifier
 
@@ -118,7 +118,7 @@ class StockReportRunner:
     def get_all_codes(self) -> list:
         wl = self.load_watchlist()
         codes = []
-        for stocks in wl.get('groups', {}).values():
+        for stocks in parse_watchlist(wl).values():
             for s in stocks:
                 codes.append(s['code'] if isinstance(s, dict) else s)
         return codes
@@ -153,7 +153,7 @@ class StockReportRunner:
                 ""
             ]
 
-            for name, stocks in wl.get('groups', {}).items():
+            for name, stocks in parse_watchlist(wl).items():
                 lines.append(f"**{name}:**")
                 for s in stocks:
                     code = s['code'] if isinstance(s, dict) else s

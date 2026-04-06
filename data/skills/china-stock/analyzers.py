@@ -1,17 +1,80 @@
 #!/usr/bin/env python3
 """
-Stock Analyzers - Pure Computation
+Stock Analyzers - Industry-Aware Scoring
 
-这些分析器只做计算，不调用任何 API。
-所有数据由 StockDataProvider 提供。
+行业感知的评分系统：
+- 不同行业使用不同的评分标准（银行看PB/NIM，白酒看PE/毛利）
+- 周期股在底部不会被错判为"垃圾"
+- 金融股毛利率=0不会被扣分
 """
 
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from typing import Dict
+from typing import Dict, Optional
 from dataclasses import dataclass, asdict
 from stock_data import StockQuote, StockFinancials
+
+
+# 行业评分参数 - 不同行业用不同标准
+INDUSTRY_PROFILES = {
+    'default': {
+        'roe_excellent': 20, 'roe_good': 15, 'roe_ok': 10,
+        'gm_weight': 10, 'nm_weight': 10,
+        'pe_low': 15, 'pe_fair': 25, 'pe_high': 40,
+        'use_pb': False,
+    },
+    'bank': {  # J66 银行 - 看PB不看PE，无毛利率概念
+        'roe_excellent': 15, 'roe_good': 11, 'roe_ok': 8,
+        'gm_weight': 0, 'nm_weight': 10,  # 银行无毛利率
+        'pe_low': 5, 'pe_fair': 8, 'pe_high': 12,
+        'use_pb': True, 'pb_low': 0.5, 'pb_fair': 0.8, 'pb_high': 1.2,
+    },
+    'insurance': {  # J68 保险 - 看PEV不看PE
+        'roe_excellent': 18, 'roe_good': 13, 'roe_ok': 9,
+        'gm_weight': 0, 'nm_weight': 10,
+        'pe_low': 8, 'pe_fair': 12, 'pe_high': 18,
+        'use_pb': True, 'pb_low': 0.6, 'pb_fair': 1.0, 'pb_high': 1.5,
+    },
+    'broker': {  # J67 资本市场 - 强周期
+        'roe_excellent': 15, 'roe_good': 10, 'roe_ok': 6,
+        'gm_weight': 8, 'nm_weight': 10,
+        'pe_low': 15, 'pe_fair': 25, 'pe_high': 40,
+        'use_pb': False,
+    },
+    'baijiu': {  # C15 白酒 - 高毛利高ROE
+        'roe_excellent': 30, 'roe_good': 20, 'roe_ok': 15,
+        'gm_weight': 10, 'nm_weight': 10,
+        'pe_low': 20, 'pe_fair': 30, 'pe_high': 45,
+        'use_pb': False,
+    },
+    'cyclical': {  # 周期股 - ROE波动大是正常的
+        'roe_excellent': 15, 'roe_good': 8, 'roe_ok': 3,
+        'gm_weight': 8, 'nm_weight': 8,
+        'pe_low': 10, 'pe_fair': 20, 'pe_high': 35,
+        'use_pb': False,
+    },
+}
+
+def get_industry_profile(stock_meta: Dict = None) -> Dict:
+    """根据股票元数据选择行业评分参数"""
+    if not stock_meta:
+        return INDUSTRY_PROFILES['default']
+
+    sub = (stock_meta.get('sub_industry', '') + stock_meta.get('_industry', '')).lower()
+
+    if 'j66' in sub or '银行' in sub:
+        return INDUSTRY_PROFILES['bank']
+    elif 'j68' in sub or '保险' in sub:
+        return INDUSTRY_PROFILES['insurance']
+    elif 'j67' in sub or '券商' in sub:
+        return INDUSTRY_PROFILES['broker']
+    elif 'c15' in sub or '白酒' in sub:
+        return INDUSTRY_PROFILES['baijiu']
+    elif stock_meta.get('lynch_category') == 'cyclical':
+        return INDUSTRY_PROFILES['cyclical']
+    else:
+        return INDUSTRY_PROFILES['default']
 
 
 @dataclass
@@ -149,47 +212,90 @@ class CANSLIMAnalyzer:
 
 
 class ValueAnalyzer:
-    """价值投资分析 (段永平/巴菲特)"""
+    """价值投资分析 (段永平/巴菲特) - 行业感知版"""
     
-    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame) -> AnalysisResult:
+    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None) -> AnalysisResult:
         scores = {}
         details = {}
         flags = []
         
-        # ROE (0-25)
+        ip = get_industry_profile(stock_meta)
+        
+        # ROE (0-25) - 使用行业标准
         roe = f.roe
-        if roe >= 20:
+        if roe >= ip['roe_excellent']:
             scores['roe'] = 25
-        elif roe >= 15:
+        elif roe >= ip['roe_good']:
             scores['roe'] = 20
-        elif roe >= 10:
+        elif roe >= ip['roe_ok']:
             scores['roe'] = 15
+        elif roe > 0:
+            scores['roe'] = 8
+            # 周期股在底部ROE低是正常的
+            if stock_meta and stock_meta.get('lynch_category') == 'cyclical':
+                flags.append("周期底部ROE偏低")
+            else:
+                flags.append("低ROE")
         else:
-            scores['roe'] = 5
-            flags.append("低ROE")
+            scores['roe'] = 3
+            if stock_meta and stock_meta.get('lynch_category') in ('cyclical', 'turnaround'):
+                flags.append("周期/反转中ROE为负")
+            else:
+                flags.append("ROE为负")
         details['roe'] = f"ROE: {roe:.1f}%"
         
-        # 利润率 (0-20)
+        # 利润率 (0-20) - 银行用ROA替代毛利率
         gm, nm = f.gross_margin, f.net_margin
-        s = (10 if gm >= 40 else 6 if gm >= 25 else 2) + (10 if nm >= 15 else 6 if nm >= 8 else 2)
-        scores['margin'] = s
-        details['margin'] = f"毛利{gm:.1f}% 净利{nm:.1f}%"
+        gm_score = 0
+        if ip['gm_weight'] > 0:
+            gm_score = ip['gm_weight'] if gm >= 40 else int(ip['gm_weight']*0.6) if gm >= 25 else int(ip['gm_weight']*0.2)
+        else:
+            # 银行/保险: 用ROA替代毛利率评分 (银行ROA 1%+为优秀)
+            roa = f.roa
+            if roa >= 1.2:
+                gm_score = 10
+            elif roa >= 0.8:
+                gm_score = 7
+            elif roa >= 0.5:
+                gm_score = 4
+            elif roa > 0:
+                gm_score = 2
+        nm_score = ip['nm_weight'] if nm >= 15 else int(ip['nm_weight']*0.6) if nm >= 8 else int(ip['nm_weight']*0.2)
+        scores['margin'] = gm_score + nm_score
+        if ip['gm_weight'] > 0:
+            details['margin'] = f"毛利{gm:.1f}% 净利{nm:.1f}%"
+        else:
+            roa = f.roa
+            details['margin'] = f"ROA:{roa:.2f}% 净利率:{nm:.1f}% (银行用ROA替代毛利)"
         
         # 财务健康 (0-20)
-        scores['health'] = 15  # 默认
+        scores['health'] = 15
         details['health'] = "财务稳健"
         
-        # 估值 (0-20)
-        pe = q.pe if q.pe > 0 else 20
-        pb = q.pb if q.pb > 0 else 2
-        pe_s = 10 if pe <= 15 else 7 if pe <= 25 else 4 if pe <= 40 else 1
-        pb_s = 10 if pb <= 2 else 7 if pb <= 4 else 4 if pb <= 6 else 1
-        scores['val'] = pe_s + pb_s
-        details['val'] = f"PE:{pe:.1f} PB:{pb:.1f}"
-        if pe > 40:
-            flags.append("高PE")
+        # 估值 (0-20) - 行业定制
+        pe = q.pe if q.pe > 0 else ip['pe_fair']
+        pb = q.pb if q.pb > 0 else 1
         
-        # 成长 (0-15)
+        if ip.get('use_pb'):
+            # 银行/保险用PB估值
+            pb_low = ip.get('pb_low', 0.5)
+            pb_fair = ip.get('pb_fair', 0.8)
+            pb_high = ip.get('pb_high', 1.2)
+            pb_s = 12 if pb <= pb_low else 9 if pb <= pb_fair else 5 if pb <= pb_high else 1
+            pe_s = 8 if pe <= ip['pe_low'] else 5 if pe <= ip['pe_fair'] else 2 if pe <= ip['pe_high'] else 0
+            scores['val'] = pb_s + pe_s
+            details['val'] = f"PB:{pb:.2f} PE:{pe:.1f}"
+            if pb > pb_high:
+                flags.append(f"PB {pb:.1f}偏高")
+        else:
+            pe_s = 10 if pe <= ip['pe_low'] else 7 if pe <= ip['pe_fair'] else 4 if pe <= ip['pe_high'] else 1
+            pb_s = 10 if pb <= 2 else 7 if pb <= 4 else 4 if pb <= 6 else 1
+            scores['val'] = pe_s + pb_s
+            details['val'] = f"PE:{pe:.1f} PB:{pb:.1f}"
+            if pe > ip['pe_high']:
+                flags.append("高PE")
+        
+        # 成长 (0-15) - 周期股负增长不一定是坏事（可能是底部）
         g = f.profit_growth
         if 20 <= g <= 50:
             scores['growth'] = 15
@@ -198,8 +304,11 @@ class ValueAnalyzer:
         elif g >= 0:
             scores['growth'] = 8
         else:
-            scores['growth'] = 3
-            flags.append("负增长")
+            if stock_meta and stock_meta.get('lynch_category') in ('cyclical', 'turnaround'):
+                scores['growth'] = 5  # 周期/反转股轻罚
+            else:
+                scores['growth'] = 3
+                flags.append("负增长")
         details['growth'] = f"利润增长: {g:.1f}%"
         
         total = sum(scores.values())
@@ -218,28 +327,41 @@ class ValueAnalyzer:
 
 
 class GrowthAnalyzer:
-    """成长股分析 (彼得林奇)"""
+    """成长股分析 (彼得林奇) - 行业感知版"""
     
-    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame) -> AnalysisResult:
+    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None) -> AnalysisResult:
         scores = {}
         details = {}
         
-        # PEG (0-30)
+        lynch_cat = stock_meta.get('lynch_category', '') if stock_meta else ''
+        
+        # PEG (0-30) - 周期股/反转股不适用PEG
         pe = q.pe if q.pe > 0 else 20
         g = max(f.profit_growth, 1)
-        peg = pe / g
         
-        if peg <= 0.5:
-            scores['peg'] = 30
-        elif peg <= 1.0:
-            scores['peg'] = 25
-        elif peg <= 1.5:
-            scores['peg'] = 18
-        elif peg <= 2.0:
-            scores['peg'] = 12
+        if lynch_cat in ('cyclical', 'turnaround') and f.profit_growth <= 0:
+            # 周期底部/反转中，PEG无意义，用PB或PE绝对值
+            if pe <= 15:
+                scores['peg'] = 20
+            elif pe <= 25:
+                scores['peg'] = 15
+            else:
+                scores['peg'] = 8
+            peg = 0
+            details['peg'] = f"PE:{pe:.1f} (周期股不适用PEG)"
         else:
-            scores['peg'] = 5
-        details['peg'] = f"PEG:{peg:.2f} (PE:{pe:.1f}/G:{g:.1f}%)"
+            peg = pe / g if g > 0 else 99
+            if peg <= 0.5:
+                scores['peg'] = 30
+            elif peg <= 1.0:
+                scores['peg'] = 25
+            elif peg <= 1.5:
+                scores['peg'] = 18
+            elif peg <= 2.0:
+                scores['peg'] = 12
+            else:
+                scores['peg'] = 5
+            details['peg'] = f"PEG:{peg:.2f} (PE:{pe:.1f}/G:{g:.1f}%)"
         
         # 增长率 (0-25)
         if g >= 25:
@@ -293,7 +415,7 @@ class GrowthAnalyzer:
 
 
 class MasterAnalyzer:
-    """综合分析 - 三种方法加权"""
+    """综合分析 - 三种方法加权(行业感知)"""
     
     def __init__(self):
         self.canslim = CANSLIMAnalyzer()
@@ -301,10 +423,10 @@ class MasterAnalyzer:
         self.growth = GrowthAnalyzer()
         self.weights = {'canslim': 0.30, 'value': 0.35, 'growth': 0.35}
     
-    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame) -> Dict:
+    def analyze(self, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None) -> Dict:
         c = self.canslim.analyze(q, f, df)
-        v = self.value.analyze(q, f, df)
-        g = self.growth.analyze(q, f, df)
+        v = self.value.analyze(q, f, df, stock_meta)
+        g = self.growth.analyze(q, f, df, stock_meta)
         
         cn = c.score / c.max_score * 100
         vn = v.score / v.max_score * 100

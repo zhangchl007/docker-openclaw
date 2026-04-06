@@ -1,16 +1,17 @@
 {
   "agent:main:main": {
     "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
-    "updatedAt": 1775446662054,
+    "updatedAt": 1775451817134,
     "systemSent": true,
     "abortedLastRun": false,
     "chatType": "direct",
     "deliveryContext": {
-      "channel": "webchat"
+      "channel": "webchat",
+      "to": "heartbeat"
     },
     "origin": {
       "label": "heartbeat",
-      "provider": "webchat",
+      "provider": "heartbeat",
       "from": "heartbeat",
       "to": "heartbeat",
       "surface": "webchat",
@@ -137,13 +138,13 @@
     },
     "lastChannel": "webchat",
     "status": "failed",
-    "startedAt": 1775446659261,
+    "startedAt": 1775451812528,
     "modelProvider": "dashscope",
     "model": "qwen-max",
     "contextTokens": 200000,
     "systemPromptReport": {
       "source": "run",
-      "generatedAt": 1775446659254,
+      "generatedAt": 1775451812523,
       "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
       "sessionKey": "agent:main:main",
       "provider": "dashscope",
@@ -163,9 +164,9 @@
         "sandboxed": false
       },
       "systemPrompt": {
-        "chars": 31668,
+        "chars": 30338,
         "projectContextChars": 16459,
-        "nonProjectContextChars": 15209
+        "nonProjectContextChars": 13879
       },
       "injectedWorkspaceFiles": [
         {
@@ -255,8 +256,8 @@
         ]
       },
       "tools": {
-        "listChars": 2441,
-        "schemaChars": 25558,
+        "listChars": 1981,
+        "schemaChars": 16723,
         "entries": [
           {
             "name": "read",
@@ -295,21 +296,9 @@
             "propertiesCount": 18
           },
           {
-            "name": "nodes",
-            "summaryChars": 118,
-            "schemaChars": 1589,
-            "propertiesCount": 32
-          },
-          {
-            "name": "cron",
-            "summaryChars": 3570,
-            "schemaChars": 6761,
-            "propertiesCount": 13
-          },
-          {
             "name": "message",
             "summaryChars": 89,
-            "schemaChars": 5509,
+            "schemaChars": 5521,
             "propertiesCount": 104
           },
           {
@@ -317,12 +306,6 @@
             "summaryChars": 152,
             "schemaChars": 223,
             "propertiesCount": 2
-          },
-          {
-            "name": "gateway",
-            "summaryChars": 464,
-            "schemaChars": 497,
-            "propertiesCount": 12
           },
           {
             "name": "agents_list",
@@ -406,7 +389,8 @@
       }
     },
     "totalTokensFresh": false,
-    "endedAt": 1775446662046,
-    "runtimeMs": 2785
+    "lastTo": "heartbeat",
+    "endedAt": 1775451817126,
+    "runtimeMs": 4598
   }
 }

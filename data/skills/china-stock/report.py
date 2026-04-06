@@ -18,7 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List
 
-from stock_data import get_provider, StockQuote, StockFinancials
+from stock_data import get_provider, StockQuote, StockFinancials, parse_watchlist
 from analyzers import MasterAnalyzer, TechCalc
 
 
@@ -128,11 +128,16 @@ class DeepDiveReport:
 
     # ==================== Deep Dive Per Stock ====================
 
-    def deep_dive_stock(self, code: str, name: str, q: StockQuote, f: StockFinancials, df: pd.DataFrame) -> str:
+    def deep_dive_stock(self, code: str, name: str, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None, sector_meta: Dict = None) -> str:
         """Generate deep-dive analysis for a single stock"""
 
+        if stock_meta is None:
+            stock_meta = {}
+        if sector_meta is None:
+            sector_meta = {}
+
         # Run three-master analysis
-        master = self.analyzer.analyze(q, f, df)
+        master = self.analyzer.analyze(q, f, df, stock_meta)
 
         # Calculate technicals
         tech = self.calc_technicals(df)
@@ -146,6 +151,19 @@ class DeepDiveReport:
         lines.append(f"### {name} ({code})")
         chg_emoji = "🟢" if q.change_pct >= 0 else "🔴"
         lines.append(f"**价格:** ¥{q.price:.2f} ({chg_emoji}{q.change_pct:+.2f}%) | **评分:** {master['master_score']:.1f}/100 | {master['master_emoji']} **{master['master_rating']}**")
+
+        # Industry context from watchlist v2
+        if stock_meta:
+            sub = stock_meta.get('sub_industry', '')
+            pos = stock_meta.get('position', '')
+            edge = stock_meta.get('competitive_edge', '')
+            lynch = stock_meta.get('lynch_category', '')
+            risk = stock_meta.get('risk_level', '')
+            lynch_cn = {'slow_grower':'缓慢增长','stalwart':'稳健增长','fast_grower':'快速成长','cyclical':'周期','turnaround':'困境反转','speculative':'投机'}.get(lynch, lynch)
+
+            lines.append(f"**细分:** {sub} | **地位:** {pos} | **林奇分类:** {lynch_cn} | **风险:** {risk}")
+            if edge:
+                lines.append(f"**核心竞争力:** {edge}")
         lines.append("")
 
         # === Key Metrics Table ===
@@ -305,16 +323,27 @@ class DeepDiveReport:
         # === Investment Commentary ===
         lines.append("**💡 投资点评:**")
         lines.append("")
-        commentary = self._generate_commentary(name, q, f, tech, master, fin_history)
+        commentary = self._generate_commentary(name, q, f, tech, master, fin_history, stock_meta, sector_meta)
         for line in commentary:
             lines.append(line)
         lines.append("")
 
         return '\n'.join(lines)
 
-    def _generate_commentary(self, name: str, q: StockQuote, f: StockFinancials, tech: Dict, master: Dict, fin_history: List[Dict] = None) -> List[str]:
-        """Generate investment commentary based on data"""
+    def _generate_commentary(self, name: str, q: StockQuote, f: StockFinancials, tech: Dict, master: Dict, fin_history: List[Dict] = None, stock_meta: Dict = None, sector_meta: Dict = None) -> List[str]:
+        """Generate investment commentary based on data + industry context"""
         comments = []
+        if stock_meta is None:
+            stock_meta = {}
+        if sector_meta is None:
+            sector_meta = {}
+
+        # --- Industry-specific insights ---
+        lynch_cat = stock_meta.get('lynch_category', '')
+        watch_points = stock_meta.get('watch_points', [])
+        peer_group = stock_meta.get('peer_group', '')
+        cycle_type = sector_meta.get('cycle_type', '')
+        benchmark_roe = sector_meta.get('benchmark_roe', 0)
 
         # Valuation
         pe = q.pe
@@ -389,6 +418,27 @@ class DeepDiveReport:
                 elif gm_std > 10:
                     comments.append(f"- ⚠️ 毛利率{len(gm_vals)}年波动{gm_std:.1f}%，竞争格局不稳定")
 
+        # --- Lynch category specific advice ---
+        if lynch_cat == 'cyclical':
+            comments.append(f"- 🔄 **周期股策略**: 关注行业拐点信号，在低ROE+低PE时布局，高ROE时警惕")
+        elif lynch_cat == 'turnaround':
+            comments.append(f"- 🔧 **困境反转策略**: 关注催化剂(管理层变更/行业转暖/新产品)，仓位宜轻")
+        elif lynch_cat == 'fast_grower':
+            comments.append(f"- 🚀 **快速成长策略**: 关注增长持续性，PEG<1是买入区间，增速放缓要减仓")
+        elif lynch_cat == 'stalwart':
+            comments.append(f"- 🛡️ **稳健股策略**: 适合做底仓，跌10-15%可加仓，涨30-50%可减仓")
+
+        # ROE vs sector benchmark
+        if benchmark_roe > 0 and f.roe > 0:
+            if f.roe >= benchmark_roe:
+                comments.append(f"- ✅ ROE {f.roe:.1f}%高于行业基准{benchmark_roe}%")
+            elif f.roe < benchmark_roe * 0.5:
+                comments.append(f"- ⚠️ ROE {f.roe:.1f}%远低于行业基准{benchmark_roe}%")
+
+        # Watch points reminder
+        if watch_points:
+            comments.append(f"- 👀 **关注要点**: {', '.join(watch_points[:4])}")
+
         if not comments:
             comments.append(f"- 📌 该股基本面数据有限，建议进一步研究后再做决策")
 
@@ -403,10 +453,10 @@ class DeepDiveReport:
 
         wl = self.load_watchlist()
 
-        if sector and sector in wl.get('groups', {}):
-            sectors = {sector: wl['groups'][sector]}
+        if sector and sector in parse_watchlist(wl):
+            sectors = {sector: parse_watchlist(wl)[sector]}
         else:
-            sectors = wl.get('groups', {})
+            sectors = parse_watchlist(wl)
 
         if not sectors:
             return "没有股票"
@@ -440,8 +490,9 @@ class DeepDiveReport:
                 q.name = name
                 f = self.provider.get_financials(code)
                 df = self.provider.get_history(code)
-                master = self.analyzer.analyze(q, f, df)
-                all_results.append((sec_name, code, name, q, f, df, master))
+                s_meta = s if isinstance(s, dict) else {}
+                master = self.analyzer.analyze(q, f, df, s_meta)
+                all_results.append((sec_name, code, name, q, f, df, master, s_meta))
 
         # Sort by score
         all_results.sort(key=lambda x: x[6]['master_score'], reverse=True)
@@ -452,7 +503,7 @@ class DeepDiveReport:
         lines.append("| # | 股票 | 价格 | 涨跌 | PE | PB | ROE | 评分 | 评级 |")
         lines.append("|---|------|------|------|----|----|-----|------|------|")
 
-        for i, (sec, code, name, q, f, df, m) in enumerate(all_results, 1):
+        for i, (sec, code, name, q, f, df, m, _sm) in enumerate(all_results, 1):
             chg = f"{'🟢' if q.change_pct >= 0 else '🔴'}{q.change_pct:+.2f}%"
             lines.append(f"| {i} | {name} | ¥{q.price:.2f} | {chg} | {q.pe:.1f} | {q.pb:.2f} | {f.roe:.1f}% | {m['master_score']:.1f} | {m['master_emoji']} {m['master_rating']} |")
 
@@ -460,13 +511,33 @@ class DeepDiveReport:
 
         # Sector deep dives
         current_sector = None
-        for sec, code, name, q, f, df, m in all_results:
+        sector_meta = {}
+        if 'sectors' in wl:
+            sector_meta = {k: v for k, v in wl['sectors'].items() if isinstance(v, dict)}
+
+        for sec, code, name, q, f, df, m, s_meta in all_results:
             if sec != current_sector:
                 lines.append(f"## 📁 {sec}")
+                # Add sector context if available
+                sm = sector_meta.get(sec, {})
+                if sm:
+                    lines.append(f"**行业:** {sm.get('industry','')} | **周期:** {sm.get('cycle_type','')} | **护城河:** {sm.get('moat_type','')}")
+                    if sm.get('cycle_notes'):
+                        lines.append(f"**周期研判:** {sm['cycle_notes']}")
+                    if sm.get('valuation_anchor'):
+                        lines.append(f"**估值锚:** {sm['valuation_anchor']}")
                 lines.append("")
                 current_sector = sec
 
-            lines.append(self.deep_dive_stock(code, name, q, f, df))
+            # Find stock metadata from watchlist
+            stock_meta = {}
+            if sm:
+                for s in sm.get('stocks', []):
+                    if s.get('code') == code:
+                        stock_meta = s
+                        break
+
+            lines.append(self.deep_dive_stock(code, name, q, f, df, stock_meta, sm))
             lines.append("---")
             lines.append("")
 
