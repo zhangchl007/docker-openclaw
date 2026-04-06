@@ -84,3 +84,12 @@ data/agents/main/sessions/sessions.json
 data/cron/jobs.json
 data/agents/main/sessions/sessions.json
 data/cron/jobs.json
+data/openclaw.json.bak.1
+.gitignore
+data/skills/china-stock/__pycache__/*
+.gitignore
+
+data/agents/main/sessions/02eca173-0f52-4c12-9703-1a5e773844c3.jsonl
+data/cron/jobs.json
+data/cron/jobs.json
+data/agents/main/sessions/sessions.json

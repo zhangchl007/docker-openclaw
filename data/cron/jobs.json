@@ -35,7 +35,7 @@
       "description": "午盘快报 11:35 AM",
       "enabled": true,
       "createdAtMs": 1775364886080,
-      "updatedAtMs": 1775364886080,
+      "updatedAtMs": 1775446503125,
       "schedule": {
         "kind": "cron",
         "expr": "35 11 * * 1-5",
@@ -48,7 +48,13 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py midday"
       },
       "state": {
-        "nextRunAtMs": 1775446500000
+        "nextRunAtMs": 1775532900000,
+        "lastRunAtMs": 1775446500022,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 3103,
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
       }
     },
     {
@@ -79,7 +85,7 @@
       "description": "价格预警检查",
       "enabled": true,
       "createdAtMs": 1775364912139,
-      "updatedAtMs": 1775444400268,
+      "updatedAtMs": 1775446200023,
       "schedule": {
         "kind": "cron",
         "expr": "*/30 9-15 * * 1-5",
@@ -92,11 +98,11 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py alert"
       },
       "state": {
-        "nextRunAtMs": 1775446200000,
-        "lastRunAtMs": 1775444400026,
+        "nextRunAtMs": 1775448000000,
+        "lastRunAtMs": 1775446200017,
         "lastRunStatus": "ok",
         "lastStatus": "ok",
-        "lastDurationMs": 242,
+        "lastDurationMs": 6,
         "lastDeliveryStatus": "not-requested",
         "consecutiveErrors": 0
       }
