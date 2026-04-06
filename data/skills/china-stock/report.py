@@ -137,6 +137,9 @@ class DeepDiveReport:
         # Calculate technicals
         tech = self.calc_technicals(df)
 
+        # Fetch multi-year financial history
+        fin_history = self.provider.get_financial_history(code)
+
         lines = []
 
         # Header
@@ -181,6 +184,73 @@ class DeepDiveReport:
         lines.append(f"| 利润增长 | {f.profit_growth:.1f}% | {pg_judge} |")
         lines.append(f"| 营收增长 | {f.revenue_growth:.1f}% | {'正' if f.revenue_growth > 0 else '负'} |")
         lines.append("")
+
+        # === Multi-Year Financial History ===
+        if fin_history and len(fin_history) >= 3:
+            is_hk = str(code).startswith('hk')
+            years_label = f"{'9' if is_hk else '10'}年" 
+            lines.append(f"**📈 {years_label}财务趋势:**")
+            lines.append("")
+            lines.append("| 年份 | ROE | 毛利率 | 净利率 | 营收增 | 净利增 |")
+            lines.append("|------|-----|--------|--------|--------|--------|")
+
+            for h in fin_history:
+                yr = h.get('year', '')[:4]
+                roe_v = h.get('roe', 0)
+                gm_v = h.get('gross_margin', 0)
+                nm_v = h.get('net_margin', 0)
+                rg_v = h.get('revenue_growth', 0)
+                pg_v = h.get('profit_growth', 0)
+                lines.append(f"| {yr} | {roe_v:.1f}% | {gm_v:.1f}% | {nm_v:.1f}% | {rg_v:+.1f}% | {pg_v:+.1f}% |")
+
+            lines.append("")
+
+            # Trend analysis from history
+            roe_vals = [h['roe'] for h in fin_history if h.get('roe', 0) != 0]
+            gm_vals = [h['gross_margin'] for h in fin_history if h.get('gross_margin', 0) != 0]
+            pg_vals = [h['profit_growth'] for h in fin_history]
+
+            if len(roe_vals) >= 3:
+                roe_peak = max(roe_vals)
+                roe_now = roe_vals[0] if roe_vals else 0
+                roe_avg = sum(roe_vals) / len(roe_vals)
+                recent_2 = sum(roe_vals[:2]) / 2 if len(roe_vals) >= 2 else roe_now
+                older_2 = sum(roe_vals[-2:]) / 2 if len(roe_vals) >= 2 else roe_vals[-1]
+
+                lines.append("**🔍 周期分析:**")
+
+                # ROE trend
+                if recent_2 > older_2 * 1.1:
+                    lines.append(f"- ROE趋势 📈 **向上** (近期{recent_2:.1f}% vs 早期{older_2:.1f}%)")
+                elif recent_2 < older_2 * 0.7:
+                    lines.append(f"- ROE趋势 📉 **下滑** (近期{recent_2:.1f}% vs 早期{older_2:.1f}%，峰值{roe_peak:.1f}%)")
+                else:
+                    lines.append(f"- ROE趋势 ➡️ **稳定** (均值{roe_avg:.1f}%)")
+
+                # Cycle position
+                if roe_now < roe_avg * 0.6 and roe_now > 0:
+                    lines.append(f"- 📌 当前ROE {roe_now:.1f}%远低于均值{roe_avg:.1f}%，可能处于**周期底部**")
+                elif roe_now > roe_avg * 1.3:
+                    lines.append(f"- ⚠️ 当前ROE {roe_now:.1f}%高于均值{roe_avg:.1f}%，可能处于**周期高位**")
+
+                # Margin trend
+                if len(gm_vals) >= 3:
+                    gm_now = gm_vals[0]
+                    gm_avg = sum(gm_vals) / len(gm_vals)
+                    if gm_now < gm_avg * 0.8:
+                        lines.append(f"- ⚠️ 毛利率{gm_now:.1f}%低于均值{gm_avg:.1f}%，竞争优势可能在收窄")
+                    elif gm_now > gm_avg * 1.1:
+                        lines.append(f"- ✅ 毛利率{gm_now:.1f}%高于均值{gm_avg:.1f}%，定价权增强")
+
+                # Growth stability
+                if len(pg_vals) >= 5:
+                    neg_years = sum(1 for p in pg_vals if p < 0)
+                    if neg_years == 0:
+                        lines.append(f"- ✅ 近{len(pg_vals)}年利润无负增长，增长质量优秀")
+                    elif neg_years >= 3:
+                        lines.append(f"- ⚠️ 近{len(pg_vals)}年中有{neg_years}年负增长，业绩波动大")
+
+                lines.append("")
 
         # === Technical Analysis ===
         if tech:
@@ -235,14 +305,14 @@ class DeepDiveReport:
         # === Investment Commentary ===
         lines.append("**💡 投资点评:**")
         lines.append("")
-        commentary = self._generate_commentary(name, q, f, tech, master)
+        commentary = self._generate_commentary(name, q, f, tech, master, fin_history)
         for line in commentary:
             lines.append(line)
         lines.append("")
 
         return '\n'.join(lines)
 
-    def _generate_commentary(self, name: str, q: StockQuote, f: StockFinancials, tech: Dict, master: Dict) -> List[str]:
+    def _generate_commentary(self, name: str, q: StockQuote, f: StockFinancials, tech: Dict, master: Dict, fin_history: List[Dict] = None) -> List[str]:
         """Generate investment commentary based on data"""
         comments = []
 
@@ -294,6 +364,30 @@ class DeepDiveReport:
             comments.append(f"- ✅ PEG {peg:.2f} < 1，彼得·林奇标准下被低估")
         elif peg > 2 and pe > 0:
             comments.append(f"- ⚠️ PEG {peg:.2f}偏高，成长性不足以支撑估值")
+
+        # Multi-year history insights
+        if fin_history and len(fin_history) >= 5:
+            roe_vals = [h['roe'] for h in fin_history if h.get('roe', 0) != 0]
+            gm_vals = [h['gross_margin'] for h in fin_history if h.get('gross_margin', 0) != 0]
+
+            if len(roe_vals) >= 5:
+                roe_now = roe_vals[0]
+                roe_peak = max(roe_vals)
+                roe_avg = sum(roe_vals) / len(roe_vals)
+
+                # Buffett/Duan Yongping perspective
+                if roe_now >= 15 and all(r >= 12 for r in roe_vals[:5]):
+                    comments.append(f"- 💎 **段永平标准**: ROE连续5年>12%(均值{roe_avg:.1f}%)，优质生意")
+                elif roe_now < roe_peak * 0.4 and roe_peak >= 15:
+                    comments.append(f"- 📌 **周期底部信号**: 当前ROE {roe_now:.1f}%仅为峰值{roe_peak:.1f}%的{roe_now/roe_peak*100:.0f}%，若行业回暖可关注")
+
+            # Margin stability (moat durability)
+            if len(gm_vals) >= 5:
+                gm_std = (sum((g - sum(gm_vals)/len(gm_vals))**2 for g in gm_vals) / len(gm_vals)) ** 0.5
+                if gm_std < 3:
+                    comments.append(f"- ✅ 毛利率{len(gm_vals)}年波动仅{gm_std:.1f}%，护城河极稳定")
+                elif gm_std > 10:
+                    comments.append(f"- ⚠️ 毛利率{len(gm_vals)}年波动{gm_std:.1f}%，竞争格局不稳定")
 
         if not comments:
             comments.append(f"- 📌 该股基本面数据有限，建议进一步研究后再做决策")

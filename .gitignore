@@ -2,6 +2,9 @@
 # ================
 # SECURITY: This file protects sensitive data from being committed
 
+# Python
+__pycache__/
+*.pyc
 # ===================
 # SENSITIVE DATA - NEVER COMMIT
 # ===================
@@ -75,3 +78,4 @@ Thumbs.db
 !.env.example
 data/stock-data/trading-rules.json
 data/skills/china-stock/trading.py
+data/cron/runs/*.jsonl

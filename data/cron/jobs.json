@@ -7,7 +7,7 @@
       "description": "早盘简报 9:00 AM",
       "enabled": true,
       "createdAtMs": 1775364856479,
-      "updatedAtMs": 1775364856479,
+      "updatedAtMs": 1775442182805,
       "schedule": {
         "kind": "cron",
         "expr": "0 9 * * 1-5",
@@ -20,7 +20,13 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py morning"
       },
       "state": {
-        "nextRunAtMs": 1775437200000
+        "nextRunAtMs": 1775523600000,
+        "lastRunAtMs": 1775442178788,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 4017,
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
       }
     },
     {
@@ -73,7 +79,7 @@
       "description": "价格预警检查",
       "enabled": true,
       "createdAtMs": 1775364912139,
-      "updatedAtMs": 1775364912139,
+      "updatedAtMs": 1775442600231,
       "schedule": {
         "kind": "cron",
         "expr": "*/30 9-15 * * 1-5",
@@ -86,7 +92,13 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py alert"
       },
       "state": {
-        "nextRunAtMs": 1775437200000
+        "nextRunAtMs": 1775444400000,
+        "lastRunAtMs": 1775442600023,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 208,
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
       }
     },
     {
@@ -139,7 +151,7 @@
       "description": "交易信号扫描 9:15 AM (开盘后15分钟)",
       "enabled": true,
       "createdAtMs": 1775391200000,
-      "updatedAtMs": 1775391200000,
+      "updatedAtMs": 1775442183083,
       "schedule": {
         "kind": "cron",
         "expr": "15 9 * * 1-5",
@@ -152,7 +164,13 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/trading.py --send"
       },
       "state": {
-        "nextRunAtMs": 1775438100000
+        "nextRunAtMs": 1775524500000,
+        "lastRunAtMs": 1775442182945,
+        "lastRunStatus": "ok",
+        "lastStatus": "ok",
+        "lastDurationMs": 138,
+        "lastDeliveryStatus": "not-requested",
+        "consecutiveErrors": 0
       }
     }
   ]
