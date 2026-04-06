@@ -79,7 +79,7 @@
       "description": "价格预警检查",
       "enabled": true,
       "createdAtMs": 1775364912139,
-      "updatedAtMs": 1775442600231,
+      "updatedAtMs": 1775444400268,
       "schedule": {
         "kind": "cron",
         "expr": "*/30 9-15 * * 1-5",
@@ -92,11 +92,11 @@
         "text": "exec:python3 /home/node/.openclaw/skills/china-stock/runner.py alert"
       },
       "state": {
-        "nextRunAtMs": 1775444400000,
-        "lastRunAtMs": 1775442600023,
+        "nextRunAtMs": 1775446200000,
+        "lastRunAtMs": 1775444400026,
         "lastRunStatus": "ok",
         "lastStatus": "ok",
-        "lastDurationMs": 208,
+        "lastDurationMs": 242,
         "lastDeliveryStatus": "not-requested",
         "consecutiveErrors": 0
       }

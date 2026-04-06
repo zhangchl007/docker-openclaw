@@ -79,3 +79,8 @@ Thumbs.db
 data/stock-data/trading-rules.json
 data/skills/china-stock/trading.py
 data/cron/runs/*.jsonl
+data/agents/main/agent/models.json
+data/agents/main/sessions/sessions.json
+data/cron/jobs.json
+data/agents/main/sessions/sessions.json
+data/cron/jobs.json
