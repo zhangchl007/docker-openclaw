@@ -128,7 +128,7 @@ class DeepDiveReport:
 
     # ==================== Deep Dive Per Stock ====================
 
-    def deep_dive_stock(self, code: str, name: str, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None, sector_meta: Dict = None) -> str:
+    def deep_dive_stock(self, code: str, name: str, q: StockQuote, f: StockFinancials, df: pd.DataFrame, stock_meta: Dict = None, sector_meta: Dict = None, stock_events: list = None) -> str:
         """Generate deep-dive analysis for a single stock"""
 
         if stock_meta is None:
@@ -328,6 +328,18 @@ class DeepDiveReport:
             lines.append(line)
         lines.append("")
 
+        # === Events (insider trades, institutional changes, block trades) ===
+        if stock_events:
+            try:
+                from events import EventScanner
+                es = EventScanner()
+                event_lines = es.format_stock_events(stock_events)
+                for line in event_lines:
+                    lines.append(line)
+                lines.append("")
+            except:
+                pass
+
         return '\n'.join(lines)
 
     def _generate_commentary(self, name: str, q: StockQuote, f: StockFinancials, tech: Dict, master: Dict, fin_history: List[Dict] = None, stock_meta: Dict = None, sector_meta: Dict = None) -> List[str]:
@@ -474,6 +486,17 @@ class DeepDiveReport:
         # Get quotes
         quotes = self.provider.get_quotes(all_codes)
 
+        # Get events for all stocks
+        events_by_stock = {}
+        try:
+            from events import EventScanner
+            print("[Report] Scanning events...")
+            es = EventScanner()
+            events_by_stock = es.get_events_by_stock()
+            print(f"[Report] {sum(len(v) for v in events_by_stock.values())} events found")
+        except Exception as e:
+            print(f"[Report] Event scan skipped: {e}")
+
         # Build report
         lines = []
         lines.append(f"# 📊 深度分析报告")
@@ -537,7 +560,7 @@ class DeepDiveReport:
                         stock_meta = s
                         break
 
-            lines.append(self.deep_dive_stock(code, name, q, f, df, stock_meta, sm))
+            lines.append(self.deep_dive_stock(code, name, q, f, df, stock_meta, sm, events_by_stock.get(code, [])))
             lines.append("---")
             lines.append("")
 
