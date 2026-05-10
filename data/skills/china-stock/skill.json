@@ -11,7 +11,11 @@
     "watchlist",
     "canslim",
     "value",
-    "growth"
+    "growth",
+    "扫描",
+    "选股",
+    "screener",
+    "candidate"
   ],
   "tools": [
     {
@@ -86,6 +90,21 @@
         "reportType": {
           "type": "string",
           "description": "Report type"
+        }
+      }
+    },
+    {
+      "name": "stock_screen",
+      "description": "全市场CANSLIM扫描器: 从中证800+创业板综筛选两类候选 — A路线(底部周线放量+基本面反转), B路线(创新高+RS强势+量能突破). 手动触发: python runner.py screen",
+      "parameters": {
+        "track": {
+          "type": "string",
+          "enum": ["a", "b", "both"],
+          "description": "扫描路线: a=底部蓄势, b=强势新高, both=两路合并 (默认 both)"
+        },
+        "dryRun": {
+          "type": "boolean",
+          "description": "试运行模式: 仅扫描少量股票验证流水线"
         }
       }
     }

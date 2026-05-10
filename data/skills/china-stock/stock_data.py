@@ -14,6 +14,7 @@ Stock Data Provider - Direct API Access
 import json
 import re
 import hashlib
+import socket
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,6 +25,10 @@ from dataclasses import dataclass, asdict
 
 import requests
 import pandas as pd
+
+# Global socket timeout — protects against hanging Baostock / AKShare / requests
+# calls. Each individual API can still set a tighter timeout via its own client.
+socket.setdefaulttimeout(15)
 
 try:
     import baostock as bs
@@ -331,6 +336,76 @@ class HKStockAPI:
             return pd.DataFrame()
 
 
+class AKShareAStockAPI:
+    """A股历史数据 - AKShare东方财富源 (HTTP, 线程安全, 适合并行).
+
+    与 BaostockAPI.get_history 输出列保持一致:
+        date, open, high, low, close, volume, amount, pctChg
+
+    自带轻量重试（适应 akshare 限流）.
+    """
+
+    @staticmethod
+    def get_history(code: str, days: int = 120, max_retries: int = 0) -> pd.DataFrame:
+        """Fetch A-share K-line via AKShare 东方财富.
+
+        Default max_retries=0: failures bubble up immediately so caller (auto-mode)
+        can fall back to Baostock. Set max_retries>0 only for standalone use.
+        """
+        try:
+            import akshare as ak
+        except ImportError:
+            return pd.DataFrame()
+
+        symbol = str(code).zfill(6)
+        end = datetime.now().strftime('%Y%m%d')
+        start = (datetime.now() - timedelta(days=int(days * 1.5))).strftime('%Y%m%d')
+
+        last_err = None
+        for attempt in range(max_retries + 1):
+            try:
+                df = ak.stock_zh_a_hist(
+                    symbol=symbol, period='daily',
+                    start_date=start, end_date=end, adjust='qfq'
+                )
+                if df is None or df.empty:
+                    return pd.DataFrame()
+
+                rename_map = {
+                    '日期': 'date', '开盘': 'open', '最高': 'high',
+                    '最低': 'low', '收盘': 'close', '成交量': 'volume',
+                    '成交额': 'amount', '涨跌幅': 'pctChg',
+                }
+                df = df.rename(columns=rename_map)
+
+                keep = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
+                if 'pctChg' in df.columns:
+                    keep.append('pctChg')
+                df = df[[c for c in keep if c in df.columns]].copy()
+
+                df['date'] = pd.to_datetime(df['date']).dt.strftime('%Y-%m-%d')
+                for col in ['open', 'high', 'low', 'close', 'volume', 'amount', 'pctChg']:
+                    if col in df.columns:
+                        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+                # AKShare volume 单位是「手」, 转股数与 Baostock 一致 (1手=100股)
+                if 'volume' in df.columns:
+                    df['volume'] = df['volume'] * 100
+
+                return df.tail(days).reset_index(drop=True)
+            except Exception as e:
+                last_err = e
+                if attempt < max_retries:
+                    time.sleep(0.5 + attempt * 0.5)  # backoff: 0.5s, 1.0s
+                    continue
+                # exhausted retries
+                break
+
+        if last_err:
+            print(f"[AKShare] A-share history error {code}: {last_err}")
+        return pd.DataFrame()
+
+
 class FinancialHistoryAPI:
     """多年财务数据 - A股用同花顺, 港股用东方财富"""
 
@@ -587,6 +662,75 @@ class BaostockAPI:
         
         return fin
 
+    @classmethod
+    def get_quarterly_data(cls, code: str, n_quarters: int = 6) -> List[Dict]:
+        """Fetch last N quarters of cumulative profit + cash-flow ratio.
+
+        Returns list of dicts (newest first):
+          {'period':'YYYYQN', 'year':y, 'quarter':q,
+           'revenue': cumulative revenue (亿元), 'net_profit': cumulative net profit (亿元),
+           'cfo_to_or': operating CF / revenue ratio (Baostock CFOToOR),
+           'cfo_positive': bool}
+
+        Note: Baostock returns CUMULATIVE figures (Q1/Q1+Q2/Q1+Q2+Q3/full-year).
+        QoQ analysis uses single-quarter values derived by differencing in caller.
+        """
+        if not cls.login():
+            return []
+
+        bs_code = cls._code(code)
+        # Generate (year, quarter) candidates from latest backwards
+        from datetime import datetime as _dt
+        now = _dt.now()
+        cur_q = (now.month - 1) // 3 + 1
+        candidates = []
+        y, q = now.year, cur_q
+        # Fetch up to 2x candidates to allow for unpublished/empty quarters
+        for _ in range(n_quarters * 2 + 4):
+            candidates.append((y, q))
+            q -= 1
+            if q < 1:
+                q = 4
+                y -= 1
+
+        results = []
+        for y, q in candidates:
+            if len(results) >= n_quarters:
+                break
+            try:
+                rs = bs.query_profit_data(code=bs_code, year=y, quarter=q)
+                if rs.error_code != '0' or not rs.next():
+                    continue
+                d = dict(zip(rs.fields, rs.get_row_data()))
+                rev = float(d.get('MBRevenue', 0) or 0)
+                np_ = float(d.get('netProfit', 0) or 0)
+                if rev == 0 and np_ == 0:
+                    continue
+
+                # Cash-flow ratio (CFO/Revenue) - sign indicates CFO direction
+                cfo_to_or = 0.0
+                try:
+                    rs2 = bs.query_cash_flow_data(code=bs_code, year=y, quarter=q)
+                    if rs2.error_code == '0' and rs2.next():
+                        d2 = dict(zip(rs2.fields, rs2.get_row_data()))
+                        cfo_to_or = float(d2.get('CFOToOR', 0) or 0)
+                except Exception:
+                    pass
+
+                results.append({
+                    'period': f'{y}Q{q}',
+                    'year': y,
+                    'quarter': q,
+                    'revenue': rev / 1e8,        # 亿元
+                    'net_profit': np_ / 1e8,     # 亿元
+                    'cfo_to_or': cfo_to_or,
+                    'cfo_positive': cfo_to_or > 0,
+                })
+            except Exception:
+                continue
+
+        return results
+
 
 class StockDataProvider:
     """统一数据提供者"""
@@ -637,31 +781,54 @@ class StockDataProvider:
             self.cache.set(key, {k: asdict(v) for k, v in quotes.items()})
         return quotes
     
-    def get_history(self, code: str, days: int = 120) -> pd.DataFrame:
+    def get_history(self, code: str, days: int = 120,
+                    source: str = 'baostock') -> pd.DataFrame:
         """获取历史K线 - 增量更新
-        
+
+        Args:
+            code: 股票代码 (A股6位, 港股hk前缀)
+            days: 取最近N个交易日
+            source: K线数据源, 仅对A股有效:
+              - 'baostock' (默认, 兼容现有调用): Baostock, 串行 (共享登录)
+              - 'akshare':  AKShare东方财富, HTTP调用, 线程安全 (适合并行扫描)
+              - 'auto':     先 akshare, 失败回落 baostock
+            港股始终走 HKStockAPI.
+
         策略：
         1. 有缓存 + 未过期(8h) → 直接返回
         2. 有缓存 + 已过期 → 只拉最近10天，合并到缓存（增量）
-        3. 无缓存 → 全量拉取120天
+        3. 无缓存 → 全量拉取
         """
         key = f"hist_{code}_{days}"
-        
+
         # Check fresh cache
         cached = self.cache.get(key, ttl_min=480)  # 8 hours
         if cached is not None:
             return pd.DataFrame(cached)
-        
+
+        is_hk = str(code).startswith('hk')
+
+        def _fetch(n_days: int) -> pd.DataFrame:
+            """Fetch fresh data using the configured source."""
+            if is_hk:
+                return HKStockAPI.get_history(code, days=n_days)
+            if source == 'akshare':
+                return AKShareAStockAPI.get_history(code, days=n_days)
+            if source == 'auto':
+                df_a = AKShareAStockAPI.get_history(code, days=n_days)
+                if df_a is not None and not df_a.empty:
+                    return df_a
+                return BaostockAPI.get_history(code, days=n_days)
+            # default: baostock
+            return BaostockAPI.get_history(code, days=n_days)
+
         # Check stale cache for incremental update
         stale = self.cache.get(key, ttl_min=999999)  # Any age
         if stale is not None and len(stale) > 20:
             # Incremental: only fetch last 10 days and merge
             self.api_calls += 1
-            if str(code).startswith('hk'):
-                new_df = HKStockAPI.get_history(code, days=10)
-            else:
-                new_df = BaostockAPI.get_history(code, days=10)
-            
+            new_df = _fetch(10)
+
             if not new_df.empty:
                 old_df = pd.DataFrame(stale)
                 # Merge: keep old rows not in new, then append new
@@ -673,18 +840,15 @@ class StockDataProvider:
                     merged = merged.tail(days)
                     self.cache.set(key, merged.to_dict('records'))
                     return merged
-            
+
             # If incremental failed, return stale and refresh cache timestamp
             self.cache.set(key, stale)
             return pd.DataFrame(stale)
-        
+
         # Full fetch (no cache at all)
         self.api_calls += 1
-        if str(code).startswith('hk'):
-            df = HKStockAPI.get_history(code, days)
-        else:
-            df = BaostockAPI.get_history(code, days)
-        
+        df = _fetch(days)
+
         if not df.empty:
             self.cache.set(key, df.to_dict('records'))
         return df
@@ -737,7 +901,27 @@ class StockDataProvider:
         if result:
             self.cache.set(key, result)
         return result
-    
+
+    def get_quarterly_data(self, code: str, n_quarters: int = 6) -> List[Dict]:
+        """获取最近N个季度的累计营收/净利润 + 经营现金流方向 (3天缓存).
+
+        A股Only (港股暂不支持). 数据来自Baostock query_profit_data/query_cash_flow_data.
+        Returns: list of dicts (newest first), see BaostockAPI.get_quarterly_data.
+        """
+        if str(code).startswith('hk'):
+            return []
+
+        key = f"qtr_{code}_{n_quarters}"
+        cached = self.cache.get(key, ttl_min=4320)  # 3 days
+        if cached is not None:
+            return cached
+
+        self.api_calls += 1
+        result = BaostockAPI.get_quarterly_data(code, n_quarters)
+        if result:
+            self.cache.set(key, result)
+        return result
+
     def prefetch(self, codes: List[str]):
         """预加载数据 - 并行化
         

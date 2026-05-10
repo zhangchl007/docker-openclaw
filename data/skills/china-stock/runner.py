@@ -11,6 +11,7 @@ Usage:
     python runner.py close      # 收盘总结 (15:05)
     python runner.py alert      # 价格预警 (每30分钟)
     python runner.py weekly     # 周报 (周六10:00)
+    python runner.py screen     # 全市场CANSLIM扫描 (手动触发)
 """
 
 import argparse
@@ -287,6 +288,80 @@ class StockReportRunner:
             self.log('error', f'周报失败: {e}\n{traceback.format_exc()}')
             return {'status': 'error', 'error': str(e)}
 
+    def run_screen(self, dry_run: bool = False) -> dict:
+        """全市场 CANSLIM 双路线扫描 (手动触发, 不上 cron)
+
+        Args:
+            dry_run: True 时仅扫描 3 只样本股, 用于验证流水线
+        """
+        self.log('info', f'启动全市场扫描器 (dry_run={dry_run})...')
+        try:
+            from screener import MarketScreener
+            from screen_report import format_screen_report, format_wechat_summary
+
+            # Load screener rules from trading-rules.json
+            rules_path = Path('/home/node/.openclaw/stock-data/trading-rules.json')
+            if not rules_path.exists():
+                self.log('error', f'trading-rules.json not found at {rules_path}')
+                return {'status': 'error', 'error': 'rules_not_found'}
+            with open(rules_path) as f:
+                all_rules = json.load(f)
+            screener_rules = all_rules.get('screener') or {}
+            if not screener_rules:
+                self.log('error', "trading-rules.json 缺少 'screener' 配置节点")
+                return {'status': 'error', 'error': 'screener_config_missing'}
+
+            override = None
+            if dry_run:
+                override = [
+                    ('600519', '贵州茅台'),
+                    ('000858', '五粮液'),
+                    ('002594', '比亚迪'),
+                ]
+
+            screener = MarketScreener(
+                rules=screener_rules,
+                universe_override=override,
+                log_fn=lambda m: self.log('info', m),
+            )
+            result = screener.run()
+
+            # Persist full markdown report
+            scoring = screener_rules.get('scoring', {})
+            top_n = int(scoring.get('top_n', 30))
+            wechat_top = int(scoring.get('wechat_top_n', 10))
+            md = format_screen_report(result, top_n=top_n)
+
+            reports_dir = Path('/home/node/.openclaw/stock-data/reports')
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime('%Y%m%d-%H%M')
+            report_path = reports_dir / f'screen-{ts}.md'
+            with open(report_path, 'w') as fp:
+                fp.write(md)
+            self.log('info', f'扫描报告已保存: {report_path}')
+
+            # Push WeChat summary if configured
+            try:
+                summary = format_wechat_summary(result, top_n=wechat_top)
+                title = f"📡 CANSLIM 扫描 - {datetime.now():%Y-%m-%d %H:%M}"
+                self.notifier.send_all(summary, title)
+                self.log('info', '企业微信摘要已发送')
+            except Exception as e:
+                self.log('warn', f'通知推送失败: {e}')
+
+            return {
+                'status': result.get('status', 'success'),
+                'elapsed_seconds': result.get('elapsed_seconds'),
+                'stats': result.get('stats', {}),
+                'final_a': len(result.get('track_a') or []),
+                'final_b': len(result.get('track_b') or []),
+                'report_path': str(report_path),
+            }
+
+        except Exception as e:
+            self.log('error', f'扫描失败: {e}\n{traceback.format_exc()}')
+            return {'status': 'error', 'error': str(e)}
+
     def run_warmup(self) -> dict:
         """收盘后预热缓存 — 拉取全部数据，第二天报告秒出"""
         self.log('info', '预热缓存...')
@@ -317,7 +392,8 @@ class StockReportRunner:
 
 def main():
     parser = argparse.ArgumentParser(description='Stock Report Runner')
-    parser.add_argument('action', choices=['morning', 'midday', 'close', 'alert', 'weekly', 'warmup', 'test'])
+    parser.add_argument('action', choices=['morning', 'midday', 'close', 'alert', 'weekly', 'warmup', 'test', 'screen'])
+    parser.add_argument('--dry-run', action='store_true', help='Screener: scan only 3 sample stocks')
     args = parser.parse_args()
 
     runner = StockReportRunner()
@@ -329,6 +405,7 @@ def main():
         'alert': runner.run_alert,
         'weekly': runner.run_weekly,
         'warmup': runner.run_warmup,
+        'screen': lambda: runner.run_screen(dry_run=args.dry_run),
     }
 
     if args.action == 'test':

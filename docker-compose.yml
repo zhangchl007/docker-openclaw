@@ -13,6 +13,8 @@ services:
     volumes:
       # 持久化配置、会话、记忆数据
       - ./data:/home/node/.openclaw
+      # 持久化 pip --user 安装的依赖（pandas/akshare/...），重建容器后不丢
+      - ./pip-user:/home/node/.local
       # 如需让AI操作宿主机文件，可挂载额外目录（可选）
       # - /宿主机路径:/容器内路径:ro
     environment:

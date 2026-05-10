@@ -461,3 +461,599 @@ class MasterAnalyzer:
             'consensus': {'buys': buys, 'total': 3},
             'timestamp': datetime.now().isoformat()
         }
+
+
+# ============================================================
+# Screener helper functions (used by screener.py)
+# ============================================================
+
+def to_weekly(df: pd.DataFrame) -> pd.DataFrame:
+    """Resample daily K-lines to weekly (W-FRI) bars.
+
+    Input columns expected: date, open, high, low, close, volume[, amount]
+    Returns weekly DataFrame indexed by week-end Friday with the same columns.
+    """
+    if df is None or df.empty or 'date' not in df.columns:
+        return pd.DataFrame()
+
+    try:
+        d = df.copy()
+        d['date'] = pd.to_datetime(d['date'])
+        d = d.set_index('date').sort_index()
+
+        agg = {'open': 'first', 'high': 'max', 'low': 'min', 'close': 'last', 'volume': 'sum'}
+        if 'amount' in d.columns:
+            agg['amount'] = 'sum'
+
+        w = d.resample('W-FRI').agg(agg).dropna(subset=['close'])
+        return w
+    except Exception:
+        return pd.DataFrame()
+
+
+def detect_weekly_volume_accumulation(weekly_df: pd.DataFrame,
+                                      lookback_weeks: int = 8,
+                                      vol_ratio_min: float = 1.10,
+                                      consecutive_weeks: int = 3,
+                                      max_pct_from_low: float = 35.0,
+                                      min_pct_from_high: float = 25.0,
+                                      max_volatility_pct: float = 12.0,
+                                      uptrend_weeks: int = 3,
+                                      uptrend_min_pct: float = 3.0) -> tuple:
+    """Detect weekly bottom volume accumulation pattern.
+
+    Conditions:
+      1. Stock is near 52w low (<=max_pct_from_low above 52w low)
+      2. Stock is far from 52w high (>=min_pct_from_high below 52w high)
+      3. Weekly volume has been >= MA20 * vol_ratio_min for >= consecutive_weeks recent weeks
+      4. Weekly volatility is moderate (avg weekly range pct <= max_volatility_pct)
+      5. Total accumulation period >= lookback_weeks weeks of data
+      6. **Recent uptrend confirmation**: latest close >= close N weeks ago * (1 + min_pct/100)
+         (Avoid stocks that are accumulating volume but still flat/falling — we want
+         price to have already started turning up.)
+
+    Returns: (matched: bool, evidence: dict). Evidence always includes peak_vol_ratio
+    so the caller can apply additional logic (e.g. extreme-volume override).
+    """
+    evidence = {}
+
+    if weekly_df is None or weekly_df.empty:
+        return False, {'reason': 'no_weekly_data'}
+    if len(weekly_df) < max(lookback_weeks, 20):
+        return False, {'reason': f'insufficient_weeks_{len(weekly_df)}'}
+
+    try:
+        c = weekly_df['close'].astype(float)
+        v = weekly_df['volume'].astype(float)
+        h = weekly_df['high'].astype(float)
+        l = weekly_df['low'].astype(float)
+
+        cur = float(c.iloc[-1])
+        # 52-week range (use last 52 weeks if available)
+        recent = c.tail(52)
+        hi_52w = float(recent.max())
+        lo_52w = float(recent.min())
+        pct_from_low = (cur / lo_52w - 1) * 100 if lo_52w > 0 else 999
+        pct_from_high = (1 - cur / hi_52w) * 100 if hi_52w > 0 else 0
+
+        evidence['cur_close'] = round(cur, 2)
+        evidence['hi_52w'] = round(hi_52w, 2)
+        evidence['lo_52w'] = round(lo_52w, 2)
+        evidence['pct_from_low'] = round(pct_from_low, 2)
+        evidence['pct_from_high'] = round(pct_from_high, 2)
+
+        # Volume MA20 on weekly bars (compute first so we can always emit ratios)
+        vol_ma = v.rolling(20).mean()
+        cur_ma = float(vol_ma.iloc[-1]) if not vol_ma.empty else 0
+        if cur_ma <= 0 or pd.isna(cur_ma):
+            return False, {**evidence, 'reason': 'no_vol_baseline'}
+
+        ratios = (v / vol_ma).fillna(0)
+        recent_ratios = ratios.tail(lookback_weeks)
+        # Count longest tail of consecutive weeks meeting threshold
+        consec = 0
+        for r in reversed(recent_ratios.tolist()):
+            if r >= vol_ratio_min:
+                consec += 1
+            else:
+                break
+        # Peak ratio across the consec window (or recent lookback if no streak)
+        peak_window = consec if consec > 0 else lookback_weeks
+        peak_ratio = float(ratios.tail(peak_window).max()) if peak_window > 0 else 0.0
+        evidence['consec_high_vol_weeks'] = consec
+        evidence['avg_vol_ratio'] = round(float(recent_ratios.mean()), 2)
+        evidence['last_vol_ratio'] = round(float(ratios.iloc[-1]), 2)
+        evidence['peak_vol_ratio'] = round(peak_ratio, 2)
+
+        # Recent uptrend: close N weeks ago vs current
+        if uptrend_weeks > 0 and len(c) > uptrend_weeks:
+            base = float(c.iloc[-(uptrend_weeks + 1)])
+            uptrend_pct = (cur / base - 1) * 100 if base > 0 else 0
+        else:
+            uptrend_pct = 0
+        evidence['recent_uptrend_pct'] = round(uptrend_pct, 2)
+        evidence['uptrend_window_weeks'] = uptrend_weeks
+
+        # Position checks (must be at bottom area)
+        if pct_from_low > max_pct_from_low:
+            return False, {**evidence, 'reason': f'far_from_low_{pct_from_low:.1f}%'}
+        if pct_from_high < min_pct_from_high:
+            return False, {**evidence, 'reason': f'too_close_to_high_{pct_from_high:.1f}%'}
+
+        if consec < consecutive_weeks:
+            return False, {**evidence, 'reason': f'consecutive_weeks_{consec}<{consecutive_weeks}'}
+
+        # Volatility check (average weekly range %)
+        rng_pct = ((h - l) / c.replace(0, 1)) * 100
+        avg_vol_pct = float(rng_pct.tail(lookback_weeks).mean())
+        evidence['avg_weekly_range_pct'] = round(avg_vol_pct, 2)
+        if avg_vol_pct > max_volatility_pct:
+            return False, {**evidence, 'reason': f'too_volatile_{avg_vol_pct:.1f}%'}
+
+        # Recent uptrend gate (走势向上确认)
+        if uptrend_weeks > 0 and uptrend_pct < uptrend_min_pct:
+            return False, {
+                **evidence,
+                'reason': f'no_recent_uptrend_{uptrend_pct:.1f}%<{uptrend_min_pct}% (近{uptrend_weeks}周)',
+            }
+
+        # Total accumulation duration: weeks where price stayed within 25% of current low
+        floor = lo_52w * 1.25
+        accum_weeks = int((c.tail(lookback_weeks * 2) <= floor * 1.5).sum())
+        evidence['accumulation_weeks_estimate'] = accum_weeks
+
+        return True, evidence
+
+    except Exception as e:
+        return False, {'reason': f'error: {e}'}
+
+
+def detect_new_high_breakout(daily_df: pd.DataFrame,
+                             weekly_df: pd.DataFrame = None,
+                             max_pct_from_high: float = 5.0,
+                             min_relative_strength: float = 80.0,
+                             vol_breakout_ratio_min: float = 1.5,
+                             ma_alignment_required: bool = True,
+                             max_distance_from_ma20_pct: float = 12.0,
+                             min_weeks_above_ma20: int = 4) -> tuple:
+    """Detect new-high breakout pattern with strong momentum.
+
+    Conditions:
+      1. Price is within max_pct_from_high of 52-week high
+      2. Relative strength (last-60d return) >= min_relative_strength
+      3. Recent volume burst (5d avg / 20d avg >= vol_breakout_ratio_min)
+      4. MA alignment: price > MA5 > MA10 > MA20 (if required)
+      5. Price not too far above MA20 (avoid extended chase)
+      6. On weekly: closed above MA20-weekly for >= min_weeks_above_ma20 weeks
+
+    Returns: (matched: bool, evidence: dict)
+    """
+    evidence = {}
+
+    if daily_df is None or daily_df.empty or 'close' not in daily_df.columns:
+        return False, {'reason': 'no_daily_data'}
+    if len(daily_df) < 60:
+        return False, {'reason': f'insufficient_days_{len(daily_df)}'}
+
+    try:
+        c = daily_df['close'].astype(float)
+        v = daily_df['volume'].astype(float) if 'volume' in daily_df.columns else pd.Series()
+
+        cur = float(c.iloc[-1])
+        hi_52w = float(c.tail(252).max() if len(c) >= 252 else c.max())
+        pct_from_high = (1 - cur / hi_52w) * 100 if hi_52w > 0 else 100
+        evidence['cur_close'] = round(cur, 2)
+        evidence['hi_52w'] = round(hi_52w, 2)
+        evidence['pct_from_high'] = round(pct_from_high, 2)
+
+        if pct_from_high > max_pct_from_high:
+            return False, {**evidence, 'reason': f'not_near_high_{pct_from_high:.1f}%'}
+
+        # Relative strength (60-day price change normalized to 0-100)
+        rs = TechCalc.strength(c, days=60)
+        evidence['relative_strength'] = round(rs, 2)
+        if rs < min_relative_strength:
+            return False, {**evidence, 'reason': f'rs_{rs:.1f}<{min_relative_strength}'}
+
+        # Volume breakout: 5d / 20d
+        if len(v) >= 20:
+            v5 = float(v.tail(5).mean())
+            v20 = float(v.tail(20).mean())
+            vol_ratio = v5 / v20 if v20 > 0 else 0
+            evidence['vol_5d_vs_20d'] = round(vol_ratio, 2)
+            if vol_ratio < vol_breakout_ratio_min:
+                return False, {**evidence, 'reason': f'vol_ratio_{vol_ratio:.2f}<{vol_breakout_ratio_min}'}
+        else:
+            return False, {**evidence, 'reason': 'insufficient_volume_data'}
+
+        # MA alignment
+        ma5 = float(TechCalc.ma(c, 5).iloc[-1])
+        ma10 = float(TechCalc.ma(c, 10).iloc[-1])
+        ma20 = float(TechCalc.ma(c, 20).iloc[-1])
+        evidence['ma5'] = round(ma5, 2)
+        evidence['ma10'] = round(ma10, 2)
+        evidence['ma20'] = round(ma20, 2)
+
+        if ma_alignment_required and not (cur > ma5 and ma5 > ma10 and ma10 > ma20):
+            return False, {**evidence, 'reason': 'ma_not_aligned'}
+
+        # Distance from MA20
+        dist_ma20 = (cur / ma20 - 1) * 100 if ma20 > 0 else 0
+        evidence['pct_above_ma20'] = round(dist_ma20, 2)
+        if dist_ma20 > max_distance_from_ma20_pct:
+            return False, {**evidence, 'reason': f'extended_above_ma20_{dist_ma20:.1f}%'}
+
+        # Weekly stability above MA20
+        if weekly_df is not None and not weekly_df.empty and len(weekly_df) >= 20:
+            wc = weekly_df['close'].astype(float)
+            w_ma20 = wc.rolling(20).mean()
+            recent = (wc.tail(min_weeks_above_ma20 + 2) > w_ma20.tail(min_weeks_above_ma20 + 2)).fillna(False)
+            consec = 0
+            for above in reversed(recent.tolist()):
+                if above:
+                    consec += 1
+                else:
+                    break
+            evidence['weeks_above_w_ma20'] = consec
+            if consec < min_weeks_above_ma20:
+                return False, {**evidence, 'reason': f'weeks_above_ma20_{consec}<{min_weeks_above_ma20}'}
+
+        return True, evidence
+
+    except Exception as e:
+        return False, {'reason': f'error: {e}'}
+
+
+def derive_single_quarter(quarterly: list) -> list:
+    """Convert Baostock cumulative quarterly data into single-quarter values.
+
+    Baostock returns CUMULATIVE figures (Q1 / H1 / Q1-Q3 / Full Year).
+    Single-quarter revenue / net_profit are derived by differencing within the
+    same fiscal year.
+
+    Caveat: Baostock often returns 0 (i.e. missing) for `MBRevenue` on Q1/Q3
+    reports for some stocks, which causes huge negative or huge positive
+    differences when naively subtracted. We therefore treat 0 as missing and
+    skip the differencing for that metric in that quarter.
+
+    Input: list of dicts (newest first) from StockDataProvider.get_quarterly_data():
+        [{'period':'2024Q3','year':2024,'quarter':3,'revenue':100,'net_profit':10, ...}, ...]
+
+    Returns: same list (newest first) with two extra keys per entry:
+        'single_revenue': single-quarter revenue (亿元) or None
+        'single_net_profit': single-quarter net profit (亿元) or None
+    """
+    if not quarterly:
+        return []
+
+    def _val(d: dict, key: str):
+        """Treat 0 / None as missing (Baostock often returns 0 for missing fields)."""
+        v = d.get(key, 0)
+        if v is None or v == 0:
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    by_period = {(q['year'], q['quarter']): q for q in quarterly}
+    out = []
+    for q in quarterly:
+        y, qt = q['year'], q['quarter']
+        single_rev = single_np = None
+        try:
+            cur_rev = _val(q, 'revenue')
+            cur_np = _val(q, 'net_profit')
+            if qt == 1:
+                # Q1 cumulative == single-quarter
+                single_rev = cur_rev
+                single_np = cur_np
+            else:
+                prev = by_period.get((y, qt - 1))
+                if prev is not None:
+                    prev_rev = _val(prev, 'revenue')
+                    prev_np = _val(prev, 'net_profit')
+                    # Only difference when BOTH endpoints are valid (non-zero)
+                    if cur_rev is not None and prev_rev is not None:
+                        single_rev = cur_rev - prev_rev
+                    if cur_np is not None and prev_np is not None:
+                        single_np = cur_np - prev_np
+        except Exception:
+            pass
+        out.append({**q, 'single_revenue': single_rev, 'single_net_profit': single_np})
+    return out
+
+
+def detect_qoq_first_improvement(quarterly: list,
+                                 metrics: tuple = ('revenue', 'net_profit')) -> tuple:
+    """Detect first-time YoY (year-over-year, same-quarter) improvement.
+
+    Despite the legacy function name '_qoq_', this now compares the LATEST
+    single-quarter value against the SAME quarter ONE YEAR AGO (e.g. 2026Q1
+    vs 2025Q1). YoY removes seasonality. Pure sequential QoQ (Q1 vs Q4) was
+    misleading for seasonal businesses (consumer electronics, retail, etc.)
+    where Q1 is structurally weaker than Q4.
+
+    "首次同比改善" = current single-quarter YoY > 0 AND the prior single
+    quarter's YoY <= 0 AND current value > 0.
+
+    Args:
+        quarterly: list returned by derive_single_quarter() (newest first).
+                   Need ≥6 entries to look back 1 year for two comparison points.
+        metrics: which fields to check ('revenue', 'net_profit', or both).
+
+    Returns: (matched: bool, evidence: dict)
+    """
+    evidence = {}
+    if not quarterly or len(quarterly) < 6:
+        n = len(quarterly) if quarterly else 0
+        return False, {'reason': f'insufficient_quarterly_data_{n}<6'}
+
+    # Build (year, quarter) -> entry map for fast YoY lookup
+    by_period = {(q['year'], q['quarter']): q for q in quarterly}
+
+    latest = quarterly[0]
+    prev = quarterly[1]  # one quarter before latest
+
+    y_l, q_l = latest['year'], latest['quarter']
+    y_p, q_p = prev['year'], prev['quarter']
+
+    yoy_latest_base = by_period.get((y_l - 1, q_l))
+    yoy_prev_base = by_period.get((y_p - 1, q_p))
+
+    evidence['latest_period'] = latest.get('period', '?')
+    evidence['prev_period'] = prev.get('period', '?')
+    evidence['yoy_latest_base_period'] = f"{y_l - 1}Q{q_l}"
+    evidence['yoy_prev_base_period'] = f"{y_p - 1}Q{q_p}"
+
+    if yoy_latest_base is None or yoy_prev_base is None:
+        return False, {**evidence, 'reason': 'no_yoy_baseline'}
+
+    matched_metric = None
+    for metric in metrics:
+        key = f'single_{metric}'
+        cur = latest.get(key)
+        cur_base = yoy_latest_base.get(key)
+        prv = prev.get(key)
+        prv_base = yoy_prev_base.get(key)
+
+        if cur is None or cur_base is None or prv is None or prv_base is None:
+            continue
+
+        # Latest YoY % = (cur - same_quarter_last_year) / |same_quarter_last_year|
+        if cur_base == 0:
+            cur_yoy = float('inf') if cur > 0 else 0
+        else:
+            cur_yoy = (cur - cur_base) / abs(cur_base) * 100
+
+        # Prior single-quarter YoY %
+        if prv_base == 0:
+            prv_yoy = float('inf') if prv > 0 else 0
+        else:
+            prv_yoy = (prv - prv_base) / abs(prv_base) * 100
+
+        evidence[f'{metric}_latest_single'] = round(float(cur), 2)
+        evidence[f'{metric}_yoy_base'] = round(float(cur_base), 2)
+        evidence[f'{metric}_yoy_pct'] = (
+            round(cur_yoy, 2) if cur_yoy != float('inf') else 999.99
+        )
+        evidence[f'{metric}_prev_yoy_pct'] = (
+            round(prv_yoy, 2) if prv_yoy != float('inf') else 999.99
+        )
+
+        # First YoY improvement: latest YoY > 0 AND prior YoY <= 0 AND value > 0
+        if cur > 0 and cur_yoy > 0 and prv_yoy <= 0:
+            matched_metric = metric
+
+    evidence['matched_metric'] = matched_metric
+    return bool(matched_metric), evidence
+
+
+def detect_cashflow_turn_positive(quarterly: list) -> tuple:
+    """Detect operating cash flow turning positive vs prior period.
+
+    Args:
+        quarterly: list from StockDataProvider.get_quarterly_data() (newest first)
+                   each entry has 'cfo_to_or' and 'cfo_positive' fields.
+
+    Returns: (matched: bool, evidence: dict)
+    """
+    evidence = {}
+    if not quarterly:
+        return False, {'reason': 'no_quarterly_data'}
+
+    latest = quarterly[0]
+    cur_cfo = float(latest.get('cfo_to_or', 0) or 0)
+    cur_pos = bool(latest.get('cfo_positive', False) or cur_cfo > 0)
+    evidence['latest_period'] = latest.get('period', '?')
+    evidence['latest_cfo_to_or'] = round(cur_cfo, 4)
+    evidence['latest_cfo_positive'] = cur_pos
+
+    if not cur_pos:
+        return False, {**evidence, 'reason': 'latest_cfo_not_positive'}
+
+    # Look at prior quarters (within same fiscal year ideally) to find a prior negative
+    prior_negative = False
+    for q in quarterly[1:4]:  # check up to 3 prior quarters
+        pcfo = float(q.get('cfo_to_or', 0) or 0)
+        if pcfo <= 0:
+            prior_negative = True
+            evidence['prior_negative_period'] = q.get('period', '?')
+            evidence['prior_cfo_to_or'] = round(pcfo, 4)
+            break
+
+    evidence['turned_positive'] = prior_negative
+    # "现金流转正": current positive AND at least one recent prior was negative
+    return prior_negative, evidence
+
+
+def detect_gross_margin_improvement(f: 'StockFinancials',
+                                    history: list = None,
+                                    min_improvement_pct: float = 1.0) -> tuple:
+    """Detect year-over-year gross margin improvement.
+
+    Gross margin (毛利率) is a leading indicator of profitability turnaround:
+    cost relief, price hikes, product-mix upgrade all show up here BEFORE
+    they hit net profit. A YoY improvement of >= min_improvement_pct points
+    is treated as a positive signal.
+
+    Args:
+        f: latest StockFinancials (current gross_margin %)
+        history: yearly history (newest first), each dict has 'gross_margin'
+        min_improvement_pct: minimum YoY improvement in percentage points
+
+    Returns: (matched: bool, evidence: dict)
+
+    Note: Banks/insurance return 0 gross margin (no concept). Caller can choose
+    to skip this signal for financials.
+    """
+    evidence = {}
+    if f is None:
+        return False, {'reason': 'no_financials'}
+
+    cur_gm = float(getattr(f, 'gross_margin', 0) or 0)
+    evidence['cur_gross_margin'] = round(cur_gm, 2)
+
+    # Industries with no gross margin concept (banks, insurance) — skip
+    if cur_gm <= 0:
+        return False, {**evidence, 'reason': 'no_gross_margin_metric'}
+
+    if not history or len(history) < 2:
+        return False, {**evidence, 'reason': 'insufficient_history'}
+
+    try:
+        prev_gm = float(history[1].get('gross_margin', 0) or 0)
+    except Exception:
+        return False, {**evidence, 'reason': 'history_parse_error'}
+
+    evidence['prev_gross_margin'] = round(prev_gm, 2)
+    delta = cur_gm - prev_gm
+    evidence['gross_margin_delta_pct'] = round(delta, 2)
+    evidence['min_improvement_pct'] = min_improvement_pct
+
+    matched = delta >= min_improvement_pct
+    evidence['matched'] = bool(matched)
+    return bool(matched), evidence
+
+
+def check_fundamental_reversal(f: 'StockFinancials',
+                               history: list = None,
+                               quarterly: list = None,
+                               profit_growth_turn_positive: bool = True,
+                               roe_yoy_improvement_min: float = 0.0,
+                               revenue_growth_min: float = -10.0,
+                               check_qoq_improvement: bool = True,
+                               check_cashflow_positive: bool = True,
+                               check_gross_margin_improvement: bool = True,
+                               gross_margin_min_improvement_pct: float = 1.0,
+                               require_all: bool = False) -> tuple:
+    """Check whether the latest financials show a fundamental reversal.
+
+    Six signals (signals 4-5 require quarterly data, signal 6 requires history):
+      1. Profit growth turn positive: latest profit_growth >= 0 AND prior year < 0
+      2. ROE year-over-year improvement: latest ROE >= prior_year ROE + roe_yoy_improvement_min
+      3. Revenue growth not collapsing: latest revenue_growth >= revenue_growth_min
+      4. YoY first improvement (single-quarter): revenue or net_profit YoY turned positive
+      5. Operating cash flow turned positive (latest > 0 AND prior period <= 0)
+      6. Gross margin improvement YoY: latest gross_margin >= prev + min_improvement_pct
+         (毛利率改善是利润反转的领先指标 — 成本/价格/产品结构变化先体现于此)
+
+    history: yearly list from StockDataProvider.get_financial_history() (newest first)
+    quarterly: quarterly list (already passed through derive_single_quarter()) — optional
+
+    Returns: (matched: bool, evidence: dict)
+    """
+    evidence = {}
+    if f is None:
+        return False, {'reason': 'no_financials'}
+
+    cur_pg = float(getattr(f, 'profit_growth', 0) or 0)
+    cur_roe = float(getattr(f, 'roe', 0) or 0)
+    cur_rg = float(getattr(f, 'revenue_growth', 0) or 0)
+    evidence['cur_profit_growth'] = round(cur_pg, 2)
+    evidence['cur_roe'] = round(cur_roe, 2)
+    evidence['cur_revenue_growth'] = round(cur_rg, 2)
+
+    prev_roe = None
+    prev_pg = None
+    if history and len(history) >= 2:
+        # history[0] is latest; history[1] is one period prior
+        try:
+            prev_roe = float(history[1].get('roe', 0) or 0)
+            prev_pg = float(history[1].get('profit_growth', 0) or 0)
+            evidence['prev_roe'] = round(prev_roe, 2)
+            evidence['prev_profit_growth'] = round(prev_pg, 2)
+        except Exception:
+            pass
+
+    # Signal 1: profit growth turn positive
+    sig1 = cur_pg >= 0 and (prev_pg is None or prev_pg < 0)
+    evidence['signal_profit_turn_positive'] = bool(sig1)
+
+    # Signal 2: ROE improvement YoY
+    if prev_roe is not None:
+        sig2 = (cur_roe - prev_roe) >= roe_yoy_improvement_min
+    else:
+        sig2 = cur_roe >= roe_yoy_improvement_min
+    evidence['signal_roe_improving'] = bool(sig2)
+
+    # Signal 3: revenue growth floor
+    sig3 = cur_rg >= revenue_growth_min
+    evidence['signal_revenue_floor'] = bool(sig3)
+
+    # Signal 4: QoQ first improvement (requires quarterly data)
+    sig4 = False
+    if check_qoq_improvement and quarterly:
+        ok4, ev4 = detect_qoq_first_improvement(quarterly)
+        sig4 = ok4
+        evidence['qoq_evidence'] = ev4
+    evidence['signal_qoq_first_improvement'] = bool(sig4)
+
+    # Signal 5: cash flow turned positive (requires quarterly data)
+    sig5 = False
+    if check_cashflow_positive and quarterly:
+        ok5, ev5 = detect_cashflow_turn_positive(quarterly)
+        sig5 = ok5
+        evidence['cashflow_evidence'] = ev5
+    evidence['signal_cashflow_turn_positive'] = bool(sig5)
+
+    # Signal 6: gross margin YoY improvement (leading indicator)
+    sig6 = False
+    if check_gross_margin_improvement:
+        ok6, ev6 = detect_gross_margin_improvement(
+            f, history=history,
+            min_improvement_pct=gross_margin_min_improvement_pct,
+        )
+        sig6 = ok6
+        evidence['gm_evidence'] = ev6
+    evidence['signal_gross_margin_improving'] = bool(sig6)
+
+    # Combine
+    if require_all:
+        # Strict: all enabled signals must pass
+        required = [sig3]  # revenue floor always required
+        if profit_growth_turn_positive:
+            required.append(sig1 or sig2)
+        if check_qoq_improvement and quarterly:
+            required.append(sig4)
+        if check_cashflow_positive and quarterly:
+            required.append(sig5)
+        if check_gross_margin_improvement:
+            required.append(sig6)
+        matched = all(required)
+    else:
+        # Default (loose): revenue floor + at least one positive signal.
+        # Signal 6 (gross margin) counts as a positive signal too.
+        positive_signals = (
+            int(sig1) + int(sig2) + int(sig4) + int(sig5) + int(sig6)
+        )
+        matched = sig3 and (positive_signals >= 1)
+        if profit_growth_turn_positive:
+            # Prefer sig1 (profit turn); accept sig4/sig5/sig6 as alt; or strong ROE (sig2)
+            matched = sig3 and (
+                sig1 or sig4 or sig5 or sig6 or (sig2 and cur_roe >= 8)
+            )
+
+    evidence['matched'] = bool(matched)
+    return bool(matched), evidence
+

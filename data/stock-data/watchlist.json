@@ -82,6 +82,15 @@
           "watch_points": ["硅料价格走势", "电池片价格", "产能利用率", "组件一体化"],
           "lynch_category": "cyclical",
           "risk_level": "high"
+        },
+        {
+          "code": "300014", "name": "亿纬锂能", "market": "SZ",
+          "sub_industry": "锂电池(消费+动力+储能)(C38)",
+          "position": "锂电池全场景龙头，消费/动力/储能三轮驱动",
+          "competitive_edge": "全品类覆盖(圆柱/方形/软包)+大客户绑定(宝马/现代)+储能先发优势",
+          "watch_points": ["储能电池出货量", "大圆柱产能爬坡", "海外客户拓展", "毛利率走势"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
         }
       ]
     },
@@ -114,6 +123,24 @@
           "watch_points": ["大模型商业化收入", "C端产品(办公本/翻译机)", "政府订单"],
           "lynch_category": "speculative",
           "risk_level": "high"
+        },
+        {
+          "code": "688169", "name": "影石创新", "market": "SH",
+          "sub_industry": "智能影像/运动相机(C39)",
+          "position": "全球全景运动相机龙头",
+          "competitive_edge": "全景影像技术领先(Insta360)+消费级+企业级双市场+海外收入占比高",
+          "watch_points": ["海外收入增速", "新品发布节奏", "企业级(数字孪生)进展", "毛利率"],
+          "lynch_category": "fast_grower",
+          "risk_level": "high"
+        },
+        {
+          "code": "002920", "name": "德赛西威", "market": "SZ",
+          "sub_industry": "汽车电子/智能驾驶(C39)",
+          "position": "国内汽车电子龙头，智能座舱+智能驾驶双轮驱动",
+          "competitive_edge": "车厂核心供应商(比亚迪/理想/小鹏)+域控制器领先+英伟达合作",
+          "watch_points": ["智能驾驶域控制器出货", "新客户拓展", "海外收入", "研发投入比"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
         }
       ]
     },
@@ -200,6 +227,28 @@
           "peer_compare": ["300347"],
           "lynch_category": "cyclical",
           "risk_level": "medium"
+        },
+        {
+          "code": "603259", "name": "药明康德", "market": "SH",
+          "sub_industry": "CRO+CDMO一体化(全球龙头)",
+          "position": "全球CXO龙头，一体化CRDMO平台",
+          "competitive_edge": "全球最大小分子CDMO+化学合成能力世界级+30000+科学家",
+          "watch_points": ["在手订单", "海外收入占比", "生物安全法案影响", "大分子CDMO进展"],
+          "peer_group": "CRO",
+          "peer_compare": ["300347", "300759"],
+          "lynch_category": "cyclical",
+          "risk_level": "high"
+        },
+        {
+          "code": "002821", "name": "凯莱英", "market": "SZ",
+          "sub_industry": "CDMO(小分子+大分子)",
+          "position": "国内CDMO龙头，小分子商业化阶段领先",
+          "competitive_edge": "连续性反应技术领先+小分子CDMO产能全球前列+大分子/ADC新布局",
+          "watch_points": ["小分子CDMO订单", "大分子产能爬坡", "海外客户占比", "产能利用率"],
+          "peer_group": "CRO",
+          "peer_compare": ["603259", "300759"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
         }
       ]
     },
@@ -232,19 +281,28 @@
           "watch_points": ["医美产品线", "人工晶体集采影响", "眼科渠道扩张"],
           "lynch_category": "slow_grower",
           "risk_level": "medium"
+        },
+        {
+          "code": "688301", "name": "奕瑞科技", "market": "SH",
+          "sub_industry": "X射线探测器/医学影像核心部件",
+          "position": "国产X射线平板探测器龙头",
+          "competitive_edge": "X射线探测器国产替代(vs万睿视/佳能)+医疗/工业/安检多场景+技术迭代快",
+          "watch_points": ["医疗探测器出货量", "工业/安检新应用", "海外收入增速", "新产品(CT/齿科)"],
+          "lynch_category": "fast_grower",
+          "risk_level": "medium"
         }
       ]
     },
 
     "装备制造": {
-      "industry": "C35 专用设备制造业(包装)",
+      "industry": "C34/C35/C36 通用/专用设备/汽车零部件",
       "cycle_type": "周期/成长",
-      "moat_type": "客户绑定+技术积累",
-      "key_drivers": ["下游扩产(饮料/啤酒)", "自动化替代人工", "出海"],
-      "risk_factors": ["下游资本开支波动", "竞争加剧", "原材料成本"],
+      "moat_type": "客户绑定+技术积累+国产替代",
+      "key_drivers": ["基建/工程机械复苏", "汽车零部件国产替代", "自动化替代人工", "出海"],
+      "risk_factors": ["下游资本开支波动", "竞争加剧", "原材料成本", "汇率波动"],
       "valuation_anchor": "PE 15-25x",
-      "benchmark_roe": 10,
-      "benchmark_margin": 25,
+      "benchmark_roe": 12,
+      "benchmark_margin": 30,
       "cycle_notes": "包装设备与下游消费品企业资本开支周期相关，通常滞后消费复苏1-2个季度。",
       "stocks": [
         {
@@ -255,6 +313,24 @@
           "watch_points": ["大客户订单", "海外收入", "新品类拓展(啤酒/乳品)"],
           "lynch_category": "turnaround",
           "risk_level": "high"
+        },
+        {
+          "code": "601100", "name": "恒立液压", "market": "SH",
+          "sub_industry": "液压件(C34)",
+          "position": "国内液压件龙头，挖掘机液压件国产替代标杆",
+          "competitive_edge": "液压泵阀技术突破(替代川崎/博世)+下游绑定三一/徐工+海外拓展",
+          "watch_points": ["挖掘机销量周期", "液压泵阀国产替代率", "海外收入", "非挖掘机应用拓展"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
+        },
+        {
+          "code": "002283", "name": "天润工业", "market": "SZ",
+          "sub_industry": "曲轴/汽车零部件(C36)",
+          "position": "全球曲轴龙头，重卡零部件核心供应商",
+          "competitive_edge": "曲轴全球市占率领先+新能源零部件转型+海外客户(康明斯/卡特彼勒)",
+          "watch_points": ["重卡行业景气度", "新能源零部件收入占比", "海外订单", "毛利率变化"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
         }
       ]
     },
@@ -282,6 +358,93 @@
       ]
     },
 
+    "创新药": {
+      "industry": "C27 医药制造业(生物创新药)",
+      "cycle_type": "成长/高风险",
+      "moat_type": "研发管线+专利+临床数据",
+      "key_drivers": ["创新药审批加速", "医保谈判以价换量", "出海(FDA申报)", "Biotech融资回暖"],
+      "risk_factors": ["研发失败", "竞争格局恶化", "医保降价", "商业化不及预期"],
+      "valuation_anchor": "DCF/管线估值为主，有盈利后可用PE",
+      "benchmark_roe": 10,
+      "benchmark_margin": 70,
+      "cycle_notes": "创新药行业受Biotech融资周期和政策影响大。2024-2025出海加速，ADC/双抗为热门方向。",
+      "stocks": [
+        {
+          "code": "688331", "name": "荣昌生物", "market": "SH",
+          "sub_industry": "ADC/双抗创新药",
+          "position": "ADC赛道龙头之一，维迪西妥单抗(RC48)已商业化",
+          "competitive_edge": "ADC技术平台+双抗管线丰富+泰它西普(自免领域)",
+          "watch_points": ["RC48销售额", "新适应症获批进度", "管线临床数据", "现金储备/融资"],
+          "lynch_category": "speculative",
+          "risk_level": "high"
+        },
+        {
+          "code": "300142", "name": "沃森生物", "market": "SZ",
+          "sub_industry": "疫苗/mRNA",
+          "position": "国产疫苗龙头之一，13价肺炎疫苗+mRNA布局",
+          "competitive_edge": "13价肺炎结合疫苗(国产唯一)+mRNA技术平台+HPV九价在研",
+          "watch_points": ["13价肺炎疫苗批签发量", "mRNA管线进展", "HPV九价临床", "海外出口"],
+          "lynch_category": "fast_grower",
+          "risk_level": "high"
+        }
+      ]
+    },
+
+    "中药": {
+      "industry": "C27 医药制造业(中药)",
+      "cycle_type": "弱周期/消费",
+      "moat_type": "品牌+配方+渠道",
+      "key_drivers": ["中药政策扶持", "OTC消费品化", "品牌认知提升", "老龄化"],
+      "risk_factors": ["集采风险", "原材料涨价", "品牌老化"],
+      "valuation_anchor": "PE 15-25x，OTC消费品可给更高估值",
+      "benchmark_roe": 15,
+      "benchmark_margin": 60,
+      "cycle_notes": "中药板块受益于政策扶持和消费品化转型，华润三九是OTC中药消费品龙头。",
+      "stocks": [
+        {
+          "code": "600750", "name": "江中药业", "market": "SH",
+          "sub_industry": "OTC中药/消费品",
+          "position": "华润江中，OTC中药消费品龙头(健胃消食片/参灵草/初元)",
+          "competitive_edge": "健胃消食片品类垄断+华润央企背景+OTC消费品化转型",
+          "watch_points": ["健胃消食片市占率", "新品类拓展", "华润整合协同", "毛利率趋势"],
+          "lynch_category": "stalwart",
+          "risk_level": "low"
+        }
+      ]
+    },
+
+    "化工": {
+      "industry": "C26 化学原料和化学制品制造业",
+      "cycle_type": "强周期",
+      "moat_type": "规模+技术+一体化",
+      "key_drivers": ["MDI/TDI景气周期", "新材料国产替代", "产能扩张", "海外需求"],
+      "risk_factors": ["产品价格波动大", "产能过剩", "环保政策", "原油价格"],
+      "valuation_anchor": "PE 10-20x(周期股看PB更合理，PB 1.5-3x)",
+      "benchmark_roe": 18,
+      "benchmark_margin": 30,
+      "cycle_notes": "化工是典型周期行业，万华化学凭MDI全球垄断地位穿越周期。关注MDI价格和新材料布局。",
+      "stocks": [
+        {
+          "code": "600309", "name": "万华化学", "market": "SH",
+          "sub_industry": "MDI/新材料",
+          "position": "全球MDI龙头(市占率30%+)，新材料平台型公司",
+          "competitive_edge": "MDI全球成本最低+技术壁垒极高(全球仅6家)+新材料多元化(电池/半导体材料)",
+          "watch_points": ["MDI价格走势", "新材料收入占比", "海外产能(匈牙利/美国)", "石化一体化进展"],
+          "lynch_category": "stalwart",
+          "risk_level": "medium"
+        },
+        {
+          "code": "002597", "name": "金禾实业", "market": "SZ",
+          "sub_industry": "食品添加剂/精细化工",
+          "position": "安赛蜜/甜蜜素全球龙头，精细化工平台",
+          "competitive_edge": "甜味剂全球市占率第一+一体化产业链(成本优势)+三氯蔗糖产能释放",
+          "watch_points": ["三氯蔗糖价格和产能", "安赛蜜出口", "新品类拓展", "环保合规"],
+          "lynch_category": "cyclical",
+          "risk_level": "medium"
+        }
+      ]
+    },
+
     "日化消费": {
       "industry": "C26 化学原料和化学制品制造业(日化/化妆品)",
       "cycle_type": "弱周期/消费",
@@ -301,6 +464,29 @@
           "watch_points": ["大单品销售增速", "线上渠道占比(抖音vs天猫)", "毛利率趋势", "新品牌孵化(彩棠/Off&Relax)"],
           "lynch_category": "stalwart",
           "risk_level": "medium"
+        }
+      ]
+    },
+
+    "公用事业": {
+      "industry": "D44 电力热力生产和供应业",
+      "cycle_type": "防御/价值",
+      "moat_type": "牌照+资源+政策壁垒",
+      "key_drivers": ["用电量增长", "电价改革", "核电审批重启", "碳中和"],
+      "risk_factors": ["核安全事故", "建设周期长(5-7年)", "电价下行", "政策变化"],
+      "valuation_anchor": "PE 12-20x，分红率是核心(类债资产)",
+      "benchmark_roe": 10,
+      "benchmark_margin": 30,
+      "cycle_notes": "核电是长期稳定增长的类债资产，装机量确定性高。2024-2025核电审批加速，中长期受益于碳中和。",
+      "stocks": [
+        {
+          "code": "003816", "name": "中国广核", "market": "SZ",
+          "sub_industry": "核电运营",
+          "position": "国内核电运营龙头(装机量占比超60%)",
+          "competitive_edge": "核电牌照稀缺+在建机组储备充足+利用小时数稳定+高分红",
+          "watch_points": ["在建机组投产进度", "利用小时数", "电价走势", "分红率"],
+          "lynch_category": "slow_grower",
+          "risk_level": "low"
         }
       ]
     }
