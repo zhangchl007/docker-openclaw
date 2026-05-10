@@ -5,6 +5,7 @@ Automated China A-share & HK stock analysis system powered by [OpenClaw](https:/
 ## ✨ Features
 
 - **Multi-Master Scoring** — CANSLIM (O'Neil) + Value (Duan Yongping) + Growth (Peter Lynch)
+- **Market Screener** — 全市场 CANSLIM 扫描 (中证800 + 创业板综), 双路线筛选 (底部蓄势 + 强势创新高), 6 个基本面反转信号 + 走势确认 + 爆量豁免
 - **Technical Analysis** — MA, RSI, MACD, Bollinger Bands, volume analysis
 - **Fundamental Analysis** — PE, PB, ROE, PEG, 10-year financial history
 - **Macro Cycle Analysis** — Howard Marks 14-dimension market cycle positioning
@@ -45,8 +46,17 @@ docker compose up -d
 
 ### 3. Install Dependencies (first time)
 
+Dependencies are installed into the host-mounted `./pip-user` directory so they
+survive container rebuilds (the directory is mapped to `/home/node/.local`):
+
 ```bash
-docker exec openclaw pip3 install akshare baostock pandas numpy requests
+# pip is bootstrapped from Debian repos (use root)
+docker exec --user root openclaw apt-get update && \
+  docker exec --user root openclaw apt-get install -y --no-install-recommends python3-pip
+
+# Install project deps as the `node` user (writes to ./pip-user/)
+docker exec --user node openclaw \
+  python3 -m pip install -r /home/node/.openclaw/skills/china-stock/requirements.txt
 ```
 
 ### 4. Configure Watchlist
@@ -74,6 +84,14 @@ docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_c
 
 # Force refresh + send to WeChat
 docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_cycle.py --refresh --send
+
+# Run full-market CANSLIM screener (first run ~5min, cached run ~40s)
+docker exec --user node -w /home/node/.openclaw/skills/china-stock openclaw \
+  python3 runner.py screen
+
+# Dry-run with 3 sample stocks (smoke test)
+docker exec --user node -w /home/node/.openclaw/skills/china-stock openclaw \
+  python3 runner.py screen --dry-run
 ```
 
 ## ⏰ Cron Schedule
@@ -86,8 +104,11 @@ docker exec -w /home/node/.openclaw/skills/china-stock openclaw python3 market_c
 | 价格预警 | Every 30min (trading hours) | `python3 runner.py alert` |
 | 周报 | Sat 10:00 | `python3 runner.py weekly` |
 | 周期分析 | Sat 10:30 | `python3 market_cycle.py --send` |
+| 全市场扫描 | Manual on-demand | `python3 runner.py screen` |
 
 All jobs auto-skip weekends and Chinese public holidays via `TradingCalendar`.
+The screener is **manual on-demand** (3-5 min runtime). To schedule it weekly,
+use `openclaw cron add` to register a weekend slot.
 
 ## 📊 Data Sources
 
@@ -106,7 +127,71 @@ All jobs auto-skip weekends and Chinese public holidays via `TradingCalendar`.
 | Stock Buybacks | AKShare: `stock_repurchase_em` |
 | Market Indices | Baostock: SH/CSI300/ChiNext |
 
-## 🔧 Manual Commands
+## � Market Screener
+
+The screener scans the configured universe (default **CSI 800 + ChiNext composite**, ~700 stocks after liquidity prefilter) on demand and produces two tracks of candidates:
+
+| Track | Pattern | Use case |
+|---|---|---|
+| **A** \u2014 Bottom Accumulation | 周线底部温和放量 + 走势已启动 + 基本面反转 | Left-side, patient |
+| **B** \u2014 New-High Momentum | 距 52 周高 \u22645% + RS\u226580 + MA \u591a\u5934\u6392\u5217 + \u91cf\u80fd\u7a81\u7834 | Right-side, momentum |
+
+### 6-Signal Fundamental Reversal (Track A)
+
+A stock must pass the **hard gate** (mode `hard`): revenue floor + at least one positive signal.
+A `volume_override` escape hatch lets truly extreme accumulation bypass fundamentals (with a -10 score penalty).
+
+| # | Signal | Source | Triggers when |
+|---|---|---|---|
+| 1 | 利润同比转正 | Annual report | This year `profit_growth ≥ 0` AND last year < 0 |
+| 2 | ROE 改善 YoY | Annual report | `cur_ROE − prev_ROE ≥` threshold (default 2 pct) |
+| 3 | 营收未崩塌 | Annual report | `revenue_growth ≥` threshold (default −30%) |
+| 4 | 单季 YoY 首次转正 | Quarterly | Latest single-Q YoY > 0 AND prior single-Q YoY ≤ 0 |
+| 5 | 经营现金流转正 | Quarterly | Latest CFO/营收 > 0 AND any recent prior ≤ 0 |
+| 6 | **毛利率改善 YoY** | Annual report | `cur_GM − prev_GM ≥` threshold (default 1 pct) |
+
+### Run
+
+```bash
+# Full scan (~5 min cold cache, ~40s warm cache)
+docker exec --user node -w /home/node/.openclaw/skills/china-stock openclaw \
+  python3 runner.py screen
+
+# Outputs:
+#   data/stock-data/reports/screen-{YYYYMMDD-HHMM}.md      ← full markdown report
+#   data/stock-data/reports/skipped-{YYYYMMDD-HHMM}.json   ← skipped breakdown
+#   WeChat summary (Top 10) sent automatically
+```
+
+### Tuning (`data/stock-data/trading-rules.json` → `screener`)
+
+```jsonc
+"track_a_bottom_accumulation": {
+  "weekly_vol_consecutive_weeks": 3,    // 连续放量周数门槛
+  "max_pct_from_52w_low": 35,            // 距 52 周低位上限
+  "recent_uptrend": {
+    "weeks_window": 3, "min_pct_up": 3   // 走势确认: 近 3 周 ≥ +3%
+  },
+  "fundamental_reversal": {
+    "mode": "hard",                       // hard / soft
+    "roe_yoy_improvement_min_pct": 2,    // ROE 同比改善阈值
+    "gross_margin_min_improvement_pct": 1.0   // 毛利率改善阈值
+  },
+  "volume_override": {
+    "enabled": true,
+    "min_consecutive_weeks": 8,           // ≥8 周 + 平均量比 ≥2.0x + 峰值量比 ≥3.5x
+    "min_avg_ratio": 2.0,
+    "min_peak_ratio": 3.5
+  }
+},
+"scoring": {
+  "track_a_threshold": 60,    // master 评分阈值 (A 路线)
+  "track_b_threshold": 70,    // master 评分阈值 (B 路线)
+  "top_n": 30                  // 报告中保留前 N
+}
+```
+
+## �🔧 Manual Commands
 
 ```bash
 # View 10-year financials
@@ -194,13 +279,15 @@ git diff --cached --name-only | grep -E "data/(openclaw|identity|devices)" && ec
 ### Key Files
 
 ```
-stock_data.py   → Data layer (Sina/Tencent/Baostock/AKShare + cache)
-analyzers.py    → CANSLIM + Value + Growth scoring (pure computation)
-report.py       → Deep-dive report with 10yr financials + technicals
-market_cycle.py → Howard Marks 14-dim macro analysis (real GDP/PMI/M2/Bonds)
-trading.py      → Multi-dimension trading signals (trend/momentum/volume/pattern)
-runner.py       → Cron entry + China trading calendar (auto skip holidays)
-notifier.py     → WeChat sender (auto-split long messages)
+stock_data.py      → Data layer (Sina/Tencent/Baostock/AKShare + cache)
+analyzers.py       → CANSLIM + Value + Growth scoring + screener helpers
+report.py          → Deep-dive report with 10yr financials + technicals
+market_cycle.py    → Howard Marks 14-dim macro analysis (real GDP/PMI/M2/Bonds)
+trading.py         → Multi-dimension trading signals (trend/momentum/volume/pattern)
+runner.py          → Cron entry + China trading calendar (auto skip holidays)
+screener.py        → 全市场 CANSLIM 扫描 (双路线, A=底部蓄势, B=创新高动量)
+screen_report.py   → 扫描报告生成 (企业微信摘要 + markdown 完整报告)
+notifier.py        → WeChat sender (auto-split long messages)
 ```
 
 ### Stock Code Format
