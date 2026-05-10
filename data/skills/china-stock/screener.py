@@ -41,6 +41,7 @@ from analyzers import (
     to_weekly,
     detect_weekly_volume_accumulation,
     detect_new_high_breakout,
+    detect_pre_ignition,
     check_fundamental_reversal,
     derive_single_quarter,
 )
@@ -257,8 +258,11 @@ class MarketScreener:
             'after_prefilter': 0,
             'track_a_hits': 0,
             'track_b_hits': 0,
+            'track_c_hits': 0,
             'final_a': 0,
             'final_b': 0,
+            'final_c': 0,
+            'final_c_plus': 0,
             'kline_fetched': 0,
             'fin_fetched': 0,
         }
@@ -367,11 +371,14 @@ class MarketScreener:
             ok, ev = detect_new_high_breakout(
                 daily_df=df,
                 weekly_df=weekly,
-                max_pct_from_high=float(b_cfg.get('max_pct_from_high', 5)),
-                min_relative_strength=float(b_cfg.get('min_relative_strength', 80)),
-                vol_breakout_ratio_min=float(b_cfg.get('vol_breakout_ratio_min', 1.5)),
+                max_pct_from_high=float(b_cfg.get('max_pct_from_high', 10)),
+                min_relative_strength=float(b_cfg.get('min_relative_strength', 60)),
+                vol_breakout_ratio_min=float(b_cfg.get('vol_breakout_ratio_min', 0.9)),
+                weekly_vol_ratio_min=float(b_cfg.get('weekly_vol_ratio_min', 1.0)),
                 ma_alignment_required=bool(b_cfg.get('ma_alignment_required', True)),
-                max_distance_from_ma20_pct=float(b_cfg.get('max_distance_from_ma20_pct', 12)),
+                max_distance_from_ma20_pct=float(b_cfg.get('max_distance_from_ma20_pct', 25)),
+                min_pct_above_ma60=float(b_cfg.get('min_pct_above_ma60', 10)),
+                max_pct_above_ma60=float(b_cfg.get('max_pct_above_ma60', 60)),
                 min_weeks_above_ma20=int(b_cfg.get('min_weeks_above_ma20', 4)),
             )
             if ok:
@@ -394,6 +401,26 @@ class MarketScreener:
             )
             if ok:
                 return ('A', ev)
+
+        # Track C (pre-ignition radar) — lowest precision, broadest recall
+        c_cfg = self.rules.get('track_c_pre_ignition', {})
+        if c_cfg.get('enabled', True):
+            ok, ev = detect_pre_ignition(
+                daily_df=df,
+                weekly_df=weekly,
+                pre_window_days=int(c_cfg.get('pre_window_days', 10)),
+                baseline_window_days=int(c_cfg.get('baseline_window_days', 20)),
+                pre_return_min_pct=float(c_cfg.get('pre_return_min_pct', -5)),
+                pre_return_max_pct=float(c_cfg.get('pre_return_max_pct', 15)),
+                pre_vol_ratio_min=float(c_cfg.get('pre_vol_ratio_min', 1.0)),
+                pre_vol_ratio_max=float(c_cfg.get('pre_vol_ratio_max', 2.0)),
+                require_above_ma20=bool(c_cfg.get('require_above_ma20', True)),
+                require_above_ma60=bool(c_cfg.get('require_above_ma60', True)),
+                min_pct_from_60d_low=float(c_cfg.get('min_pct_from_60d_low', 5)),
+                max_pct_from_60d_low=float(c_cfg.get('max_pct_from_60d_low', 50)),
+            )
+            if ok:
+                return ('C', ev)
 
         return None
 
@@ -501,11 +528,13 @@ class MarketScreener:
 
         a_count = sum(1 for h in hits.values() if h['track'] == 'A')
         b_count = sum(1 for h in hits.values() if h['track'] == 'B')
+        c_count = sum(1 for h in hits.values() if h['track'] == 'C')
         self.stats['track_a_hits'] = a_count
         self.stats['track_b_hits'] = b_count
+        self.stats['track_c_hits'] = c_count
         skipped_in_scan = sum(1 for v in self.skipped.values() if 'timeout' in v or 'error' in v)
         self._log(
-            f"[TechScan] hits: track A={a_count}, track B={b_count}, "
+            f"[TechScan] hits: track A={a_count}, track B={b_count}, track C={c_count}, "
             f"timed-out/errored={skipped_in_scan}, total elapsed={time.time()-t0:.1f}s"
         )
         return hits
@@ -667,19 +696,22 @@ class MarketScreener:
     def enrich_and_score(self, hits: Dict[str, Dict]) -> List[Candidate]:
         """Serial enrichment (Baostock financials are not thread-safe).
 
-        For the typical screening case (final hits = a few dozen), serial is fine.
+        Only Track A and B hits go through full enrichment (financials + scoring).
+        Track C hits are watchlist-only — they bypass this expensive stage.
+
         K-line is already cached from technical_scan stage. Each stock has a
         per-stock timeout to avoid one bad stock blocking the whole stage.
         """
         candidates: List[Candidate] = []
-        items = list(hits.items())
+        # Filter to only A/B for full enrichment (C is watchlist-only)
+        items = [(code, h) for code, h in hits.items() if h.get('track') in ('A', 'B')]
         if not items:
             return []
 
         ex_cfg = self.rules.get('execution', {})
         per_stock_timeout = float(ex_cfg.get('enrich_timeout_sec', 30))
 
-        self._log(f"[Enrich] scoring {len(items)} hits (serial, timeout={per_stock_timeout}s/stock)...")
+        self._log(f"[Enrich] scoring {len(items)} A/B hits (serial, timeout={per_stock_timeout}s/stock)...")
 
         with ThreadPoolExecutor(max_workers=1) as pool:
             for i, (code, hit) in enumerate(items, 1):
@@ -695,6 +727,121 @@ class MarketScreener:
                 if i % 10 == 0 or i == len(items):
                     self._log(f"[Enrich] progress {i}/{len(items)} accepted={len(candidates)}")
         return candidates
+
+    def _enrich_track_c_with_fundamentals(self, c_raw: List[Dict]) -> List[Dict]:
+        """Apply A-style fundamental signals to Track C candidates.
+
+        Light-weight enrichment using only annual financials (cached 24h+) —
+        no quarterly data fetch (too slow for 100+ candidates).
+
+        Adds 4 quick signals (利润转正/ROE改善/营收未崩塌/毛利率改善) and a
+        derived 'is_c_plus' flag for the high-quality subset:
+            ≥2 positive fundamental signals AND ROE ≥ 10%
+
+        This bridges Track C (technical breakout) and Track A (fundamental
+        reversal): C+ = "fundamentals already supporting the breakout".
+        """
+        if not c_raw:
+            return []
+
+        c_cfg = self.rules.get('track_c_pre_ignition', {}) or {}
+        post_cfg = c_cfg.get('post_filter', {}) or {}
+        if not post_cfg.get('enabled', True):
+            return c_raw  # post-filter disabled, return as-is
+
+        ex_cfg = self.rules.get('execution', {})
+        per_stock_timeout = float(ex_cfg.get('c_enrich_timeout_sec', 5))
+
+        roe_min = float(post_cfg.get('roe_min', 10))
+        roe_yoy_min = float(post_cfg.get('roe_yoy_improvement_min_pct', 0))
+        revenue_min = float(post_cfg.get('revenue_growth_min_pct', -20))
+        gm_min = float(post_cfg.get('gross_margin_min_improvement_pct', 0.5))
+        n_signals_for_plus = int(post_cfg.get('signals_required_for_c_plus', 2))
+
+        self._log(f"[TrackC+] enriching {len(c_raw)} candidates (annual only, timeout={per_stock_timeout}s)...")
+        t0 = time.time()
+        enriched = []
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            for i, raw in enumerate(c_raw, 1):
+                code = raw['code']
+                # Fetch financials (cached 24h) + history (cached 7d) — should be fast
+                fut = pool.submit(self._fetch_c_fundamentals, code)
+                try:
+                    fund = fut.result(timeout=per_stock_timeout)
+                except Exception:
+                    fund = None
+                    fut.cancel()
+
+                if not fund:
+                    raw['fund_signals'] = {}
+                    raw['fund_signals_count'] = 0
+                    raw['is_c_plus'] = False
+                    enriched.append(raw)
+                    continue
+
+                f, hist = fund
+                cur_pg = float(f.profit_growth or 0)
+                cur_roe = float(f.roe or 0)
+                cur_rg = float(f.revenue_growth or 0)
+                cur_gm = float(f.gross_margin or 0)
+                prev_roe = float(hist[1].get('roe', 0)) if len(hist) >= 2 else 0
+                prev_pg = float(hist[1].get('profit_growth', 0)) if len(hist) >= 2 else 0
+                prev_gm = float(hist[1].get('gross_margin', 0)) if len(hist) >= 2 else 0
+
+                sig_profit = cur_pg >= 0 and prev_pg < 0
+                sig_roe = (cur_roe - prev_roe) >= roe_yoy_min
+                sig_rev = cur_rg >= revenue_min
+                sig_gm = (cur_gm - prev_gm) >= gm_min if cur_gm > 0 else False
+
+                signals = {
+                    'profit_turn': sig_profit,
+                    'roe_improving': sig_roe,
+                    'revenue_floor': sig_rev,
+                    'gm_improving': sig_gm,
+                }
+                n_pos = sum(signals.values())
+
+                # C+ criteria: enough signals + healthy ROE
+                is_c_plus = (n_pos >= n_signals_for_plus) and (cur_roe >= roe_min)
+
+                raw['fund_signals'] = signals
+                raw['fund_signals_count'] = n_pos
+                raw['is_c_plus'] = is_c_plus
+                raw['fund_metrics'] = {
+                    'roe': round(cur_roe, 2),
+                    'gm': round(cur_gm, 2),
+                    'np_growth': round(cur_pg, 2),
+                    'rev_growth': round(cur_rg, 2),
+                    'roe_yoy': round(cur_roe - prev_roe, 2),
+                    'gm_yoy': round(cur_gm - prev_gm, 2),
+                }
+                enriched.append(raw)
+
+                if i % 25 == 0 or i == len(c_raw):
+                    n_plus = sum(1 for x in enriched if x.get('is_c_plus'))
+                    self._log(f"[TrackC+] progress {i}/{len(c_raw)} C+={n_plus} elapsed={time.time()-t0:.1f}s")
+
+        n_plus = sum(1 for x in enriched if x.get('is_c_plus'))
+        self._log(f"[TrackC+] done: {n_plus} C+ stocks (≥{n_signals_for_plus} signals + ROE≥{roe_min}%) "
+                  f"out of {len(enriched)} C candidates")
+        return enriched
+
+    def _fetch_c_fundamentals(self, code: str):
+        """Helper: fetch latest financials + history for Track C+ check.
+
+        Returns (StockFinancials, history_list) or None on failure.
+        Both are cached (24h / 7d), so most calls are near-instant.
+        """
+        try:
+            f = self.provider.get_financials(code)
+            hist = self.provider.get_financial_history(
+                code, years=int(self.fin_history_years)
+            )
+            return f, hist
+        except Exception:
+            return None
+
 
     # ----------------------------------------------------
     # Pipeline
@@ -737,6 +884,7 @@ class MarketScreener:
                     'thresholds': thresholds,
                     'track_a': [],
                     'track_b': [],
+                    'track_c': [],
                     'skipped_count': len(self.skipped),
                     'skipped_summary': skipped_summary,
                 }
@@ -762,15 +910,47 @@ class MarketScreener:
             track_a.sort(key=lambda c: c.master_score, reverse=True)
             track_b.sort(key=lambda c: c.master_score, reverse=True)
 
+            # Track C — watchlist (technical-only). Enrich with A-style fundamentals
+            # to identify "C+" subset (technical breakout + fundamentals improving)
+            top_c = int(scoring_cfg.get('top_c', 50))
+            track_c_raw = [
+                {
+                    'code': code,
+                    'name': h.get('name', ''),
+                    'price': float(getattr(h.get('quote'), 'price', 0) or 0),
+                    'change_pct': float(getattr(h.get('quote'), 'change_pct', 0) or 0),
+                    'pe': float(getattr(h.get('quote'), 'pe', 0) or 0),
+                    'evidence': h.get('evidence', {}),
+                }
+                for code, h in hits.items() if h.get('track') == 'C'
+            ]
+
+            # Apply A-style fundamental post-filter to enrich Track C with quality signals
+            track_c_hits = self._enrich_track_c_with_fundamentals(track_c_raw)
+
+            # Sort: C+ (with fundamentals) first, then by signal count + vol ratio
+            track_c_hits.sort(
+                key=lambda x: (
+                    not x.get('is_c_plus', False),  # C+ first
+                    -int(x.get('fund_signals_count', 0) or 0),  # more signals first
+                    -float(x['evidence'].get('pre_vol_ratio') or 0),
+                    abs(float(x['evidence'].get('pre_return_pct') or 0) - 6.0),
+                )
+            )
+
             self.stats['final_a'] = len(track_a)
             self.stats['final_b'] = len(track_b)
+            self.stats['final_c'] = len(track_c_hits)
+            self.stats['final_c_plus'] = sum(1 for c in track_c_hits if c.get('is_c_plus'))
 
             elapsed = time.time() - t0
             self._log(
                 f"[Done] universe={self.stats['universe_size']} "
                 f"prefilter={self.stats['after_prefilter']} "
                 f"techA={self.stats['track_a_hits']} techB={self.stats['track_b_hits']} "
-                f"finalA={len(track_a)} finalB={len(track_b)} "
+                f"techC={self.stats['track_c_hits']} "
+                f"finalA={len(track_a)} finalB={len(track_b)} finalC={len(track_c_hits)} "
+                f"(C+={self.stats.get('final_c_plus', 0)}) "
                 f"elapsed={elapsed:.1f}s"
             )
 
@@ -796,6 +976,7 @@ class MarketScreener:
                 'thresholds': thresholds,
                 'track_a': [asdict(c) for c in track_a[:top_n]],
                 'track_b': [asdict(c) for c in track_b[:top_n]],
+                'track_c': track_c_hits[:top_c],
                 'skipped_count': len(self.skipped),
                 'skipped_summary': skipped_summary,
                 'skipped_path': str(skipped_path) if skipped_path else None,
@@ -872,6 +1053,7 @@ class MarketScreener:
             'error': error,
             'track_a': [],
             'track_b': [],
+            'track_c': [],
             'skipped_count': len(self.skipped),
         }
 

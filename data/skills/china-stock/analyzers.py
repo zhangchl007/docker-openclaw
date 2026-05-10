@@ -610,21 +610,39 @@ def detect_weekly_volume_accumulation(weekly_df: pd.DataFrame,
 
 def detect_new_high_breakout(daily_df: pd.DataFrame,
                              weekly_df: pd.DataFrame = None,
-                             max_pct_from_high: float = 5.0,
-                             min_relative_strength: float = 80.0,
-                             vol_breakout_ratio_min: float = 1.5,
+                             max_pct_from_high: float = 10.0,
+                             min_relative_strength: float = 60.0,
+                             vol_breakout_ratio_min: float = 0.9,
+                             weekly_vol_ratio_min: float = 1.0,
                              ma_alignment_required: bool = True,
-                             max_distance_from_ma20_pct: float = 12.0,
+                             max_distance_from_ma20_pct: float = 25.0,
+                             min_pct_above_ma60: float = 10.0,
+                             max_pct_above_ma60: float = 60.0,
                              min_weeks_above_ma20: int = 4) -> tuple:
     """Detect new-high breakout pattern with strong momentum.
 
-    Conditions:
-      1. Price is within max_pct_from_high of 52-week high
-      2. Relative strength (last-60d return) >= min_relative_strength
-      3. Recent volume burst (5d avg / 20d avg >= vol_breakout_ratio_min)
+    Defaults tuned from the empirical study of 42 YTD ≥50% gainers (2026 H1):
+      - 距 MA60 是最强的"分级"指标 (底部 -2.5% → 翻倍 +38.9%)
+      - 5/20 日量比无区分力 (各梯队都在 1.0-1.2)
+      - 距 52w 高 ≤10% 覆盖 84% 牛股 (5% 仅覆盖 55%)
+      - RS ≥60 覆盖 78% 牛股 (80 仅覆盖 25%)
+
+    Conditions (all must hold):
+      1. Price within max_pct_from_high% of 52-week high
+      2. Relative strength (60-day return) >= min_relative_strength
+      3. Volume confirmation — at least ONE of:
+           a) 5-day avg volume / 20-day avg volume >= vol_breakout_ratio_min
+           b) recent weekly volume / weekly MA20 >= weekly_vol_ratio_min
       4. MA alignment: price > MA5 > MA10 > MA20 (if required)
-      5. Price not too far above MA20 (avoid extended chase)
-      6. On weekly: closed above MA20-weekly for >= min_weeks_above_ma20 weeks
+      5. Price within max_distance_from_ma20_pct% above MA20 (avoid extreme chase)
+      6. **Distance above MA60**: between min_pct_above_ma60 and max_pct_above_ma60.
+         This is the strongest grading indicator: 50-100% group median +21%,
+         ≥100% group median +39%. Below 10% means trend not yet established;
+         above 60% means already overheated.
+      7. On weekly: closed above MA20-weekly for >= min_weeks_above_ma20 weeks
+
+    All metrics are populated in `evidence` regardless of which check failed,
+    so callers can build diagnostic dashboards.
 
     Returns: (matched: bool, evidence: dict)
     """
@@ -642,61 +660,195 @@ def detect_new_high_breakout(daily_df: pd.DataFrame,
         cur = float(c.iloc[-1])
         hi_52w = float(c.tail(252).max() if len(c) >= 252 else c.max())
         pct_from_high = (1 - cur / hi_52w) * 100 if hi_52w > 0 else 100
+
+        # Compute ALL metrics first so evidence is complete for diagnostics
         evidence['cur_close'] = round(cur, 2)
         evidence['hi_52w'] = round(hi_52w, 2)
         evidence['pct_from_high'] = round(pct_from_high, 2)
 
-        if pct_from_high > max_pct_from_high:
-            return False, {**evidence, 'reason': f'not_near_high_{pct_from_high:.1f}%'}
-
-        # Relative strength (60-day price change normalized to 0-100)
         rs = TechCalc.strength(c, days=60)
         evidence['relative_strength'] = round(rs, 2)
-        if rs < min_relative_strength:
-            return False, {**evidence, 'reason': f'rs_{rs:.1f}<{min_relative_strength}'}
 
-        # Volume breakout: 5d / 20d
+        vol_ratio_daily = None
         if len(v) >= 20:
             v5 = float(v.tail(5).mean())
             v20 = float(v.tail(20).mean())
-            vol_ratio = v5 / v20 if v20 > 0 else 0
-            evidence['vol_5d_vs_20d'] = round(vol_ratio, 2)
-            if vol_ratio < vol_breakout_ratio_min:
-                return False, {**evidence, 'reason': f'vol_ratio_{vol_ratio:.2f}<{vol_breakout_ratio_min}'}
-        else:
-            return False, {**evidence, 'reason': 'insufficient_volume_data'}
+            vol_ratio_daily = v5 / v20 if v20 > 0 else 0
+            evidence['vol_5d_vs_20d'] = round(vol_ratio_daily, 2)
 
-        # MA alignment
-        ma5 = float(TechCalc.ma(c, 5).iloc[-1])
-        ma10 = float(TechCalc.ma(c, 10).iloc[-1])
-        ma20 = float(TechCalc.ma(c, 20).iloc[-1])
-        evidence['ma5'] = round(ma5, 2)
-        evidence['ma10'] = round(ma10, 2)
-        evidence['ma20'] = round(ma20, 2)
-
-        if ma_alignment_required and not (cur > ma5 and ma5 > ma10 and ma10 > ma20):
-            return False, {**evidence, 'reason': 'ma_not_aligned'}
-
-        # Distance from MA20
-        dist_ma20 = (cur / ma20 - 1) * 100 if ma20 > 0 else 0
-        evidence['pct_above_ma20'] = round(dist_ma20, 2)
-        if dist_ma20 > max_distance_from_ma20_pct:
-            return False, {**evidence, 'reason': f'extended_above_ma20_{dist_ma20:.1f}%'}
-
-        # Weekly stability above MA20
+        vol_ratio_weekly = None
+        weeks_above = None
         if weekly_df is not None and not weekly_df.empty and len(weekly_df) >= 20:
+            wv = weekly_df['volume'].astype(float)
+            w_ma20_v = wv.rolling(20).mean()
+            cur_w_ma = float(w_ma20_v.iloc[-1]) if not w_ma20_v.empty else 0
+            if cur_w_ma > 0:
+                # Recent 4-week average volume vs weekly MA20
+                recent_w_avg = float(wv.tail(4).mean())
+                vol_ratio_weekly = recent_w_avg / cur_w_ma
+                evidence['vol_weekly_4w_vs_ma20'] = round(vol_ratio_weekly, 2)
+
             wc = weekly_df['close'].astype(float)
-            w_ma20 = wc.rolling(20).mean()
-            recent = (wc.tail(min_weeks_above_ma20 + 2) > w_ma20.tail(min_weeks_above_ma20 + 2)).fillna(False)
+            w_ma20_c = wc.rolling(20).mean()
+            recent = (wc.tail(min_weeks_above_ma20 + 2) >
+                      w_ma20_c.tail(min_weeks_above_ma20 + 2)).fillna(False)
             consec = 0
             for above in reversed(recent.tolist()):
                 if above:
                     consec += 1
                 else:
                     break
+            weeks_above = consec
             evidence['weeks_above_w_ma20'] = consec
-            if consec < min_weeks_above_ma20:
-                return False, {**evidence, 'reason': f'weeks_above_ma20_{consec}<{min_weeks_above_ma20}'}
+
+        ma5 = float(TechCalc.ma(c, 5).iloc[-1])
+        ma10 = float(TechCalc.ma(c, 10).iloc[-1])
+        ma20 = float(TechCalc.ma(c, 20).iloc[-1])
+        ma60 = float(TechCalc.ma(c, 60).iloc[-1]) if len(c) >= 60 else ma20
+        evidence['ma5'] = round(ma5, 2)
+        evidence['ma10'] = round(ma10, 2)
+        evidence['ma20'] = round(ma20, 2)
+        evidence['ma60'] = round(ma60, 2)
+
+        dist_ma20 = (cur / ma20 - 1) * 100 if ma20 > 0 else 0
+        dist_ma60 = (cur / ma60 - 1) * 100 if ma60 > 0 else 0
+        evidence['pct_above_ma20'] = round(dist_ma20, 2)
+        evidence['pct_above_ma60'] = round(dist_ma60, 2)
+
+        # Now apply gates (all metrics already in evidence)
+        if pct_from_high > max_pct_from_high:
+            return False, {**evidence, 'reason': f'not_near_high_{pct_from_high:.1f}%'}
+
+        if rs < min_relative_strength:
+            return False, {**evidence, 'reason': f'rs_{rs:.1f}<{min_relative_strength}'}
+
+        # Dual volume gate: pass if either daily 5/20 OR weekly 4w/MA20 confirms
+        vol_ok_daily = (vol_ratio_daily is not None and vol_ratio_daily >= vol_breakout_ratio_min)
+        vol_ok_weekly = (vol_ratio_weekly is not None and vol_ratio_weekly >= weekly_vol_ratio_min)
+        if not (vol_ok_daily or vol_ok_weekly):
+            d_str = f"{vol_ratio_daily:.2f}" if vol_ratio_daily is not None else 'na'
+            w_str = f"{vol_ratio_weekly:.2f}" if vol_ratio_weekly is not None else 'na'
+            return False, {
+                **evidence,
+                'reason': f'vol_weak: 5/20={d_str}<{vol_breakout_ratio_min} and 4w/MA20={w_str}<{weekly_vol_ratio_min}'
+            }
+        evidence['vol_ok_daily'] = bool(vol_ok_daily)
+        evidence['vol_ok_weekly'] = bool(vol_ok_weekly)
+
+        if ma_alignment_required and not (cur > ma5 and ma5 > ma10 and ma10 > ma20):
+            return False, {**evidence, 'reason': 'ma_not_aligned'}
+
+        if dist_ma20 > max_distance_from_ma20_pct:
+            return False, {**evidence, 'reason': f'extended_above_ma20_{dist_ma20:.1f}%'}
+
+        # MA60 distance gate (key grading indicator from empirical study)
+        if dist_ma60 < min_pct_above_ma60:
+            return False, {**evidence, 'reason': f'ma60_dist_{dist_ma60:.1f}%<{min_pct_above_ma60} (趋势未确立)'}
+        if dist_ma60 > max_pct_above_ma60:
+            return False, {**evidence, 'reason': f'ma60_dist_{dist_ma60:.1f}%>{max_pct_above_ma60} (过度乖离)'}
+
+        if weeks_above is not None and weeks_above < min_weeks_above_ma20:
+            return False, {**evidence, 'reason': f'weeks_above_ma20_{weeks_above}<{min_weeks_above_ma20}'}
+
+        return True, evidence
+
+    except Exception as e:
+        return False, {'reason': f'error: {e}'}
+
+
+def detect_pre_ignition(daily_df: pd.DataFrame,
+                        weekly_df: pd.DataFrame = None,
+                        pre_window_days: int = 10,
+                        baseline_window_days: int = 20,
+                        pre_return_min_pct: float = -5.0,
+                        pre_return_max_pct: float = 15.0,
+                        pre_vol_ratio_min: float = 1.0,
+                        pre_vol_ratio_max: float = 2.0,
+                        require_above_ma20: bool = True,
+                        require_above_ma60: bool = True,
+                        min_pct_from_60d_low: float = 5.0,
+                        max_pct_from_60d_low: float = 50.0) -> tuple:
+    """Track C — pre-ignition radar: stocks showing the empirical signature
+    that preceded YTD ≥50% rallies in the 1-4 weeks before ignition.
+
+    Empirical study (42 winners, 2026 H1) showed the consistent precursor:
+      - Pre 10-day return: median +6.3%, range -5 to +15%
+      - Pre 10-day volume / 20-day baseline: median 1.21x (range 1.0-2.0x)
+      - Above MA20: 90% of winners
+      - Above MA60: 93% of winners
+      - Distance from 60-day low: median +25% (range +5% to +50%)
+
+    This detector is **early-stage**, **broad recall** (~50%), **low precision**
+    (~8%). Use it to populate an observation pool, NOT direct buy signals.
+
+    Returns: (matched: bool, evidence: dict)
+    """
+    evidence = {}
+    if daily_df is None or daily_df.empty or 'close' not in daily_df.columns:
+        return False, {'reason': 'no_daily_data'}
+    if len(daily_df) < 60:
+        return False, {'reason': f'insufficient_days_{len(daily_df)}'}
+
+    try:
+        c = daily_df['close'].astype(float).reset_index(drop=True)
+        v = daily_df['volume'].astype(float).reset_index(drop=True) if 'volume' in daily_df.columns else None
+        cur = float(c.iloc[-1])
+
+        # Pre-window return (last N days)
+        if len(c) <= pre_window_days:
+            return False, {'reason': 'insufficient_data_for_pre_window'}
+        base_price = float(c.iloc[-(pre_window_days + 1)])
+        pre_return = (cur / base_price - 1) * 100 if base_price > 0 else 0
+        evidence['pre_return_pct'] = round(pre_return, 2)
+        evidence['pre_window_days'] = pre_window_days
+
+        # Pre-window volume vs baseline (20d ending pre_window days ago)
+        pre_vol_ratio = None
+        if v is not None and len(v) > pre_window_days + baseline_window_days:
+            pre_vol = v.tail(pre_window_days).mean()
+            base_vol = v.iloc[-(pre_window_days + baseline_window_days):-pre_window_days].mean()
+            if base_vol > 0:
+                pre_vol_ratio = float(pre_vol / base_vol)
+        evidence['pre_vol_ratio'] = round(pre_vol_ratio, 2) if pre_vol_ratio is not None else None
+
+        # MA positions
+        ma20 = float(TechCalc.ma(c, 20).iloc[-1]) if len(c) >= 20 else 0
+        ma60 = float(TechCalc.ma(c, 60).iloc[-1]) if len(c) >= 60 else 0
+        above_ma20 = cur > ma20 if ma20 > 0 else False
+        above_ma60 = cur > ma60 if ma60 > 0 else False
+        evidence['ma20'] = round(ma20, 2)
+        evidence['ma60'] = round(ma60, 2)
+        evidence['above_ma20'] = above_ma20
+        evidence['above_ma60'] = above_ma60
+
+        # Distance from 60-day low
+        low_60d = float(c.tail(60).min()) if len(c) >= 60 else float(c.min())
+        pct_from_low = (cur / low_60d - 1) * 100 if low_60d > 0 else 0
+        evidence['pct_from_60d_low'] = round(pct_from_low, 2)
+
+        # Distance from 52w high (informational)
+        hi_252 = float(c.tail(252).max() if len(c) >= 252 else c.max())
+        pct_from_high = (1 - cur / hi_252) * 100 if hi_252 > 0 else 0
+        evidence['pct_from_52w_high'] = round(pct_from_high, 2)
+
+        # Apply gates
+        if not (pre_return_min_pct <= pre_return <= pre_return_max_pct):
+            return False, {**evidence, 'reason': f'pre_return_{pre_return:.1f}%_out_of_range'}
+
+        if pre_vol_ratio is None:
+            return False, {**evidence, 'reason': 'no_volume_baseline'}
+        if not (pre_vol_ratio_min <= pre_vol_ratio <= pre_vol_ratio_max):
+            return False, {**evidence, 'reason': f'pre_vol_{pre_vol_ratio:.2f}x_out_of_range'}
+
+        if require_above_ma20 and not above_ma20:
+            return False, {**evidence, 'reason': 'below_ma20'}
+        if require_above_ma60 and not above_ma60:
+            return False, {**evidence, 'reason': 'below_ma60'}
+
+        if pct_from_low < min_pct_from_60d_low:
+            return False, {**evidence, 'reason': f'too_close_to_low_{pct_from_low:.1f}%<{min_pct_from_60d_low}'}
+        if pct_from_low > max_pct_from_60d_low:
+            return False, {**evidence, 'reason': f'far_from_low_{pct_from_low:.1f}%>{max_pct_from_60d_low} (起涨已晚)'}
 
         return True, evidence
 

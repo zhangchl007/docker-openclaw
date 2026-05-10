@@ -136,20 +136,6 @@ The screener scans the configured universe (default **CSI 800 + ChiNext composit
 | **A** \u2014 Bottom Accumulation | 周线底部温和放量 + 走势已启动 + 基本面反转 | Left-side, patient |
 | **B** \u2014 New-High Momentum | 距 52 周高 \u22645% + RS\u226580 + MA \u591a\u5934\u6392\u5217 + \u91cf\u80fd\u7a81\u7834 | Right-side, momentum |
 
-### 6-Signal Fundamental Reversal (Track A)
-
-A stock must pass the **hard gate** (mode `hard`): revenue floor + at least one positive signal.
-A `volume_override` escape hatch lets truly extreme accumulation bypass fundamentals (with a -10 score penalty).
-
-| # | Signal | Source | Triggers when |
-|---|---|---|---|
-| 1 | 利润同比转正 | Annual report | This year `profit_growth ≥ 0` AND last year < 0 |
-| 2 | ROE 改善 YoY | Annual report | `cur_ROE − prev_ROE ≥` threshold (default 2 pct) |
-| 3 | 营收未崩塌 | Annual report | `revenue_growth ≥` threshold (default −30%) |
-| 4 | 单季 YoY 首次转正 | Quarterly | Latest single-Q YoY > 0 AND prior single-Q YoY ≤ 0 |
-| 5 | 经营现金流转正 | Quarterly | Latest CFO/营收 > 0 AND any recent prior ≤ 0 |
-| 6 | **毛利率改善 YoY** | Annual report | `cur_GM − prev_GM ≥` threshold (default 1 pct) |
-
 ### Run
 
 ```bash
@@ -163,33 +149,6 @@ docker exec --user node -w /home/node/.openclaw/skills/china-stock openclaw \
 #   WeChat summary (Top 10) sent automatically
 ```
 
-### Tuning (`data/stock-data/trading-rules.json` → `screener`)
-
-```jsonc
-"track_a_bottom_accumulation": {
-  "weekly_vol_consecutive_weeks": 3,    // 连续放量周数门槛
-  "max_pct_from_52w_low": 35,            // 距 52 周低位上限
-  "recent_uptrend": {
-    "weeks_window": 3, "min_pct_up": 3   // 走势确认: 近 3 周 ≥ +3%
-  },
-  "fundamental_reversal": {
-    "mode": "hard",                       // hard / soft
-    "roe_yoy_improvement_min_pct": 2,    // ROE 同比改善阈值
-    "gross_margin_min_improvement_pct": 1.0   // 毛利率改善阈值
-  },
-  "volume_override": {
-    "enabled": true,
-    "min_consecutive_weeks": 8,           // ≥8 周 + 平均量比 ≥2.0x + 峰值量比 ≥3.5x
-    "min_avg_ratio": 2.0,
-    "min_peak_ratio": 3.5
-  }
-},
-"scoring": {
-  "track_a_threshold": 60,    // master 评分阈值 (A 路线)
-  "track_b_threshold": 70,    // master 评分阈值 (B 路线)
-  "top_n": 30                  // 报告中保留前 N
-}
-```
 
 ## �🔧 Manual Commands
 

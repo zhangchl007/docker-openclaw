@@ -55,12 +55,13 @@ def _track_b_table_row(c: Dict) -> str:
     ev = c.get('evidence') or {}
     pct_high = ev.get('pct_from_high', '-')
     rs = ev.get('relative_strength', '-')
+    pct_ma60 = ev.get('pct_above_ma60', '-')
     vol_ratio = ev.get('vol_5d_vs_20d', '-')
     above_ma = ev.get('weeks_above_w_ma20', '-')
     return (
         f"| {c['code']} | {c['name']} | {c.get('industry','-')[:8]} | "
         f"¥{c['price']:.2f} | {c['change_pct']:+.2f}% | "
-        f"-{pct_high}% | {rs} | {vol_ratio}x | {above_ma}周 | "
+        f"-{pct_high}% | {rs} | +{pct_ma60}% | {vol_ratio}x | {above_ma}周 | "
         f"{c['canslim_score']:.0f}/{c['master_score']:.0f} | "
         f"{c.get('master_emoji','')} {c.get('master_rating','')} |"
     )
@@ -238,19 +239,19 @@ def format_screen_report(result: Dict, top_n: int = 30) -> str:
     # Track B
     lines.append("---")
     lines.append("")
-    lines.append("## 🚀 B路线: 强势创新高 (RS≥80 + 量能突破 + 均线多头)")
+    lines.append("## 🚀 B路线: 强势创新高 (RS≥60 + 距MA60 +10~+60% + 均线多头)")
     lines.append("")
-    lines.append("> 关注临近或突破52周新高、相对强度高、放量上行的标的。"
-                 "右侧追踪型，注意控制追涨距离。")
+    lines.append("> 关注临近或突破52周新高、距 MA60 健康偏离、量能持续上行的标的。"
+                 "右侧追踪型，距 MA60 距离是最强分级指标。")
     lines.append("")
 
     if not track_b:
         lines.append("_本次扫描无符合条件的候选。可调宽 `track_b.max_pct_from_52w_high` "
-                     "或调低 `min_relative_strength` 重试。_")
+                     "或调低 `min_relative_strength` / `min_pct_above_ma60` 重试。_")
     else:
-        lines.append("| 代码 | 名称 | 行业 | 现价 | 涨跌 | 距52周高 | RS | 量比 | "
+        lines.append("| 代码 | 名称 | 行业 | 现价 | 涨跌 | 距52周高 | RS | 距MA60 | 量比 | "
                      "周线MA20稳 | CANSLIM/Master | 评级 |")
-        lines.append("|------|------|------|------|------|----------|------|------|"
+        lines.append("|------|------|------|------|------|----------|------|--------|------|"
                      "------------|----------------|------|")
         for c in track_b[:top_n]:
             lines.append(_track_b_table_row(c))
@@ -261,6 +262,75 @@ def format_screen_report(result: Dict, top_n: int = 30) -> str:
             lines.append(f"**{i}. {c['name']} ({c['code']})** — {c.get('industry','')}  "
                          f"现价 ¥{c['price']:.2f}")
             lines.append(_why_b(c))
+            lines.append("")
+
+    # Track C — observation pool (no fundamentals, just technical radar)
+    track_c = result.get('track_c') or []
+    track_c_plus = [c for c in track_c if c.get('is_c_plus')]
+    track_c_base = [c for c in track_c if not c.get('is_c_plus')]
+
+    lines.append("---")
+    lines.append("")
+    lines.append("## 🌅 C路线: 起涨前雷达 (观察池, 非买入信号)")
+    lines.append("")
+    lines.append("> 起涨前 1-4 周特征 (实证基于 42 只 YTD≥50% 牛股回测): "
+                 "前 10 天温和上涨 + 量能 1.0-2.0x + 已站上 MA60 + 距 60 日低 5-50%. "
+                 "**召回率 50%, 精度 8%** — 用于建立观察池，需配合主题/板块/基本面二次过滤。")
+    lines.append("")
+
+    if not track_c:
+        lines.append("_本次扫描无符合条件的候选。_")
+    else:
+        lines.append(f"_共发现 **{len(track_c)}** 只 C 候选, 其中 **{len(track_c_plus)}** 只为 C+（基本面同步改善）_")
+        lines.append("")
+
+        # ---- C+ subset (high quality) ----
+        if track_c_plus:
+            lines.append("### ⭐ C+ 高质量子集 (技术起涨 + 基本面已改善)")
+            lines.append("")
+            lines.append("> 这些股不仅满足 C 路线技术条件，还在年报中显示基本面正向信号 "
+                         "(利润转正 / ROE改善 / 营收未崩塌 / 毛利率改善 任 ≥2 项, 且 ROE ≥10%). "
+                         "**优先观察**。")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 现价 | 涨跌 | 前10d回 | 前10d量 | 距60d低 | "
+                         "ROE | GM | NPGr | 信号(利/ROE/营/GM) |")
+            lines.append("|------|------|------|------|---------|---------|---------|"
+                         "------|------|------|--------------------|")
+            for c in track_c_plus:
+                ev = c.get('evidence') or {}
+                fm = c.get('fund_metrics') or {}
+                fs = c.get('fund_signals') or {}
+                sig_str = '/'.join(['✅' if fs.get(k) else '➖' for k in
+                                    ['profit_turn', 'roe_improving', 'revenue_floor', 'gm_improving']])
+                lines.append(
+                    f"| {c['code']} | {c.get('name','-')} | ¥{c.get('price',0):.2f} | "
+                    f"{c.get('change_pct',0):+.2f}% | "
+                    f"{ev.get('pre_return_pct','-')}% | "
+                    f"{ev.get('pre_vol_ratio','-')}x | "
+                    f"+{ev.get('pct_from_60d_low','-')}% | "
+                    f"{fm.get('roe','-')}% | {fm.get('gm','-')}% | {fm.get('np_growth','-')}% | "
+                    f"{sig_str} |"
+                )
+            lines.append("")
+
+        # ---- C base (technical only) ----
+        if track_c_base:
+            lines.append(f"### C 基础观察池 ({len(track_c_base)} 只, 仅技术信号)")
+            lines.append("")
+            lines.append("| 代码 | 名称 | 现价 | 涨跌 | 前10d回 | 前10d量 | 距60d低 | 距52w高 | ROE | NPGr |")
+            lines.append("|------|------|------|------|---------|---------|---------|---------|------|------|")
+            for c in track_c_base[:50]:
+                ev = c.get('evidence') or {}
+                fm = c.get('fund_metrics') or {}
+                lines.append(
+                    f"| {c['code']} | {c.get('name','-')} | ¥{c.get('price',0):.2f} | "
+                    f"{c.get('change_pct',0):+.2f}% | "
+                    f"{ev.get('pre_return_pct','-')}% | "
+                    f"{ev.get('pre_vol_ratio','-')}x | "
+                    f"+{ev.get('pct_from_60d_low','-')}% | "
+                    f"-{ev.get('pct_from_52w_high','-')}% | "
+                    f"{fm.get('roe','-')}% | {fm.get('np_growth','-')}% |"
+                )
             lines.append("")
 
     # Footer
@@ -286,7 +356,8 @@ def format_wechat_summary(result: Dict, top_n: int = 10) -> str:
     lines.append("")
     lines.append(
         f"池: {stats.get('universe_size',0)} → 预过滤 {stats.get('after_prefilter',0)} → "
-        f"A {stats.get('final_a',0)} / B {stats.get('final_b',0)}"
+        f"A {stats.get('final_a',0)} / B {stats.get('final_b',0)} / "
+        f"C观察池 {stats.get('final_c',0)} (含 C+ {stats.get('final_c_plus', 0)})"
     )
     lines.append("")
 

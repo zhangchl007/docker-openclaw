@@ -1,7 +1,7 @@
 {
   "agent:main:main": {
     "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
-    "updatedAt": 1778403209380,
+    "updatedAt": 1778428413719,
     "systemSent": true,
     "abortedLastRun": false,
     "chatType": "direct",
@@ -138,13 +138,13 @@
     },
     "lastChannel": "webchat",
     "status": "failed",
-    "startedAt": 1778403191828,
+    "startedAt": 1778428395772,
     "modelProvider": "dashscope",
     "model": "qwen-max",
     "contextTokens": 200000,
     "systemPromptReport": {
       "source": "run",
-      "generatedAt": 1778403191784,
+      "generatedAt": 1778428395744,
       "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
       "sessionKey": "agent:main:main",
       "provider": "dashscope",
@@ -384,7 +384,7 @@
     },
     "totalTokensFresh": false,
     "lastTo": "heartbeat",
-    "endedAt": 1778403194367,
-    "runtimeMs": 2539
+    "endedAt": 1778428398712,
+    "runtimeMs": 2940
   }
 }
