@@ -1,7 +1,7 @@
 {
   "agent:main:main": {
     "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
-    "updatedAt": 1778428413719,
+    "updatedAt": 1778551218728,
     "systemSent": true,
     "abortedLastRun": false,
     "chatType": "direct",
@@ -138,13 +138,13 @@
     },
     "lastChannel": "webchat",
     "status": "failed",
-    "startedAt": 1778428395772,
+    "startedAt": 1778551200744,
     "modelProvider": "dashscope",
     "model": "qwen-max",
     "contextTokens": 200000,
     "systemPromptReport": {
       "source": "run",
-      "generatedAt": 1778428395744,
+      "generatedAt": 1778551200711,
       "sessionId": "02eca173-0f52-4c12-9703-1a5e773844c3",
       "sessionKey": "agent:main:main",
       "provider": "dashscope",
@@ -164,9 +164,9 @@
         "sandboxed": false
       },
       "systemPrompt": {
-        "chars": 31217,
+        "chars": 31222,
         "projectContextChars": 16250,
-        "nonProjectContextChars": 14967
+        "nonProjectContextChars": 14972
       },
       "injectedWorkspaceFiles": [
         {
@@ -384,7 +384,7 @@
     },
     "totalTokensFresh": false,
     "lastTo": "heartbeat",
-    "endedAt": 1778428398712,
-    "runtimeMs": 2940
+    "endedAt": 1778551203715,
+    "runtimeMs": 2971
   }
 }

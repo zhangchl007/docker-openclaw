@@ -96,3 +96,4 @@ data/agents/main/sessions/sessions.json
 
 # Python pip --user packages mounted into container (./pip-user:/home/node/.local)
 pip-user/
+data/stock-data/backtest-log.json

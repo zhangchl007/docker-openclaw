@@ -119,42 +119,93 @@ class UniverseBuilder:
             self.log("[Universe] akshare not installed, falling back to watchlist")
             return self._fallback_to_watchlist()
 
+        # Retry config: per-index max attempts + min members to consider success
+        max_retries = int(self.cfg.get('universe_index_max_retries', 3))
+        retry_sleep = float(self.cfg.get('universe_index_retry_sleep_sec', 2.0))
+        # Expected minimum members per index (000906=CSI800 ~800, 399102=ChiNext ~1300+)
+        min_members_per_index = self.cfg.get('universe_min_members_per_index', {
+            '000906': 700,
+            '399102': 1000,
+        })
+
         members: Dict[str, str] = {}
+        per_index_counts: Dict[str, int] = {}
+        failed_indices: List[str] = []
+
         for idx in indices:
             self.log(f"[Universe] fetching index {idx}...")
-            try:
-                df = ak.index_stock_cons(symbol=idx)
-                # akshare 返回列名不固定，尝试常见的
-                code_col = None
-                name_col = None
-                for c in df.columns:
-                    cl = str(c).lower()
-                    if code_col is None and ('code' in cl or '代码' in str(c)):
-                        code_col = c
-                    if name_col is None and ('name' in cl or '名称' in str(c)):
-                        name_col = c
-                if code_col is None:
-                    self.log(f"[Universe] {idx}: cannot locate code column in {df.columns.tolist()}")
-                    continue
-                for _, row in df.iterrows():
-                    raw = str(row[code_col]).strip()
-                    code = ''.join(ch for ch in raw if ch.isdigit())
-                    if not code or len(code) != 6:
+            idx_members: Dict[str, str] = {}
+            last_err: Optional[str] = None
+            for attempt in range(1, max_retries + 1):
+                try:
+                    df = ak.index_stock_cons(symbol=idx)
+                    code_col = None
+                    name_col = None
+                    for c in df.columns:
+                        cl = str(c).lower()
+                        if code_col is None and ('code' in cl or '代码' in str(c)):
+                            code_col = c
+                        if name_col is None and ('name' in cl or '名称' in str(c)):
+                            name_col = c
+                    if code_col is None:
+                        last_err = f"cannot locate code column in {df.columns.tolist()}"
+                        break  # not retryable
+                    tmp: Dict[str, str] = {}
+                    for _, row in df.iterrows():
+                        raw = str(row[code_col]).strip()
+                        code = ''.join(ch for ch in raw if ch.isdigit())
+                        if not code or len(code) != 6:
+                            continue
+                        name = str(row[name_col]).strip() if name_col else ""
+                        tmp[code] = name
+                    # Validate size against expected minimum
+                    expected_min = int(min_members_per_index.get(idx, 0))
+                    if expected_min and len(tmp) < expected_min:
+                        last_err = f"got {len(tmp)} valid codes < expected_min {expected_min} (likely partial response)"
+                        self.log(f"[Universe] {idx} attempt {attempt}/{max_retries}: {last_err}, retrying...")
+                        time.sleep(retry_sleep)
                         continue
-                    name = str(row[name_col]).strip() if name_col else ""
-                    members[code] = name
-                self.log(f"[Universe] {idx}: {len(df)} members")
-            except Exception as e:
-                self.log(f"[Universe] {idx} failed: {e}")
+                    idx_members = tmp
+                    self.log(f"[Universe] {idx}: {len(tmp)} valid codes (df rows={len(df)})")
+                    last_err = None
+                    break
+                except Exception as e:
+                    last_err = str(e)
+                    self.log(f"[Universe] {idx} attempt {attempt}/{max_retries} failed: {e}")
+                    time.sleep(retry_sleep)
+
+            if idx_members:
+                members.update(idx_members)
+                per_index_counts[idx] = len(idx_members)
+            else:
+                failed_indices.append(idx)
+                self.log(f"[Universe] {idx} ALL retries exhausted: {last_err}")
+
+        # Decide: if ANY required index failed, do NOT persist the partial cache.
+        if failed_indices:
+            self.log(f"[Universe] partial fetch (failed: {failed_indices}); "
+                     f"will NOT persist this partial result to avoid stale cache")
+            # Try to use previous (possibly expired) cache as a better fallback than watchlist
+            stale_cached = self.provider.cache.get(cache_key, ttl_min=10 * 24 * 60)  # up to 10 days stale
+            if stale_cached and len(stale_cached) >= sum(min_members_per_index.values()) * 0.5:
+                self.log(f"[Universe] using STALE cache: {len(stale_cached)} stocks "
+                         f"(rather than partial new fetch or watchlist)")
+                return [(c['code'], c.get('name', '')) for c in stale_cached]
+            if not members:
+                self.log("[Universe] no members at all, falling back to watchlist")
+                return self._fallback_to_watchlist()
+            # Have some members but partial — return without caching
+            self.log(f"[Universe] returning partial (uncached) {len(members)} stocks")
+            return [(c, n) for c, n in members.items()]
 
         if not members:
             self.log("[Universe] all indices failed, falling back to watchlist")
             return self._fallback_to_watchlist()
 
-        # Persist
+        # Persist only when ALL configured indices succeeded
         records = [{'code': c, 'name': n} for c, n in members.items()]
         self.provider.cache.set(cache_key, records)
-        self.log(f"[Universe] built: {len(records)} stocks (cached)")
+        self.log(f"[Universe] built: {len(records)} stocks (cached); per-index: {per_index_counts}")
         return [(c, n) for c, n in members.items()]
 
     def _fallback_to_watchlist(self) -> List[Tuple[str, str]]:
@@ -785,14 +836,22 @@ class MarketScreener:
                 cur_roe = float(f.roe or 0)
                 cur_rg = float(f.revenue_growth or 0)
                 cur_gm = float(f.gross_margin or 0)
-                prev_roe = float(hist[1].get('roe', 0)) if len(hist) >= 2 else 0
-                prev_pg = float(hist[1].get('profit_growth', 0)) if len(hist) >= 2 else 0
-                prev_gm = float(hist[1].get('gross_margin', 0)) if len(hist) >= 2 else 0
+                # When prior-year history is missing we CANNOT judge improvement;
+                # mark prev_* as None and treat affected signals as False (vs the
+                # earlier bug that fell back to 0 and produced spurious ✅).
+                has_history = len(hist) >= 2
+                prev_roe = float(hist[1].get('roe', 0)) if has_history else None
+                prev_pg = float(hist[1].get('profit_growth', 0)) if has_history else None
+                prev_gm = float(hist[1].get('gross_margin', 0)) if has_history else None
 
-                sig_profit = cur_pg >= 0 and prev_pg < 0
-                sig_roe = (cur_roe - prev_roe) >= roe_yoy_min
+                # profit_turn: requires explicit "prev<0 AND cur>=0"; if prev unknown -> False
+                sig_profit = (prev_pg is not None) and (cur_pg >= 0) and (prev_pg < 0)
+                # roe_improving: requires real YoY delta to clear roe_yoy_min
+                sig_roe = (prev_roe is not None) and ((cur_roe - prev_roe) >= roe_yoy_min)
+                # revenue_floor: simple absolute floor (no history needed)
                 sig_rev = cur_rg >= revenue_min
-                sig_gm = (cur_gm - prev_gm) >= gm_min if cur_gm > 0 else False
+                # gm_improving: needs prev_gm and current GM > 0
+                sig_gm = (prev_gm is not None) and (cur_gm > 0) and ((cur_gm - prev_gm) >= gm_min)
 
                 signals = {
                     'profit_turn': sig_profit,
@@ -813,8 +872,8 @@ class MarketScreener:
                     'gm': round(cur_gm, 2),
                     'np_growth': round(cur_pg, 2),
                     'rev_growth': round(cur_rg, 2),
-                    'roe_yoy': round(cur_roe - prev_roe, 2),
-                    'gm_yoy': round(cur_gm - prev_gm, 2),
+                    'roe_yoy': round(cur_roe - prev_roe, 2) if prev_roe is not None else None,
+                    'gm_yoy': round(cur_gm - prev_gm, 2) if prev_gm is not None else None,
                 }
                 enriched.append(raw)
 
@@ -913,6 +972,10 @@ class MarketScreener:
             # Track C — watchlist (technical-only). Enrich with A-style fundamentals
             # to identify "C+" subset (technical breakout + fundamentals improving)
             top_c = int(scoring_cfg.get('top_c', 50))
+            # Optional separate caps for C+ vs C-base so a flood of C+ does not
+            # squeeze C-base out of the report.
+            top_c_plus = int(scoring_cfg.get('top_c_plus', top_c))
+            top_c_base = int(scoring_cfg.get('top_c_base', max(0, top_c - top_c_plus)))
             track_c_raw = [
                 {
                     'code': code,
@@ -942,6 +1005,11 @@ class MarketScreener:
             self.stats['final_b'] = len(track_b)
             self.stats['final_c'] = len(track_c_hits)
             self.stats['final_c_plus'] = sum(1 for c in track_c_hits if c.get('is_c_plus'))
+
+            # Apply separate caps for C+ vs C-base so both are visible in the report
+            c_plus_list = [c for c in track_c_hits if c.get('is_c_plus')][:top_c_plus]
+            c_base_list = [c for c in track_c_hits if not c.get('is_c_plus')][:top_c_base]
+            track_c_display = c_plus_list + c_base_list
 
             elapsed = time.time() - t0
             self._log(
@@ -976,7 +1044,7 @@ class MarketScreener:
                 'thresholds': thresholds,
                 'track_a': [asdict(c) for c in track_a[:top_n]],
                 'track_b': [asdict(c) for c in track_b[:top_n]],
-                'track_c': track_c_hits[:top_c],
+                'track_c': track_c_display,
                 'skipped_count': len(self.skipped),
                 'skipped_summary': skipped_summary,
                 'skipped_path': str(skipped_path) if skipped_path else None,

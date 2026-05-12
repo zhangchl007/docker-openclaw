@@ -281,7 +281,18 @@ def format_screen_report(result: Dict, top_n: int = 30) -> str:
     if not track_c:
         lines.append("_本次扫描无符合条件的候选。_")
     else:
-        lines.append(f"_共发现 **{len(track_c)}** 只 C 候选, 其中 **{len(track_c_plus)}** 只为 C+（基本面同步改善）_")
+        stats = result.get('stats') or {}
+        total_c = int(stats.get('final_c', len(track_c)) or len(track_c))
+        total_c_plus = int(stats.get('final_c_plus', len(track_c_plus)) or len(track_c_plus))
+        # If display was capped, note both the total discovered and what's shown
+        if total_c > len(track_c) or total_c_plus > len(track_c_plus):
+            lines.append(
+                f"_共发现 **{total_c}** 只 C 候选, 其中 **{total_c_plus}** 只为 C+（基本面同步改善）_  \n"
+                f"_报告展示: C+ **{len(track_c_plus)}** / C 基础 **{len(track_c_base)}** "
+                f"(按 top_c_plus / top_c_base 配置截断)_"
+            )
+        else:
+            lines.append(f"_共发现 **{total_c}** 只 C 候选, 其中 **{total_c_plus}** 只为 C+（基本面同步改善）_")
         lines.append("")
 
         # ---- C+ subset (high quality) ----
